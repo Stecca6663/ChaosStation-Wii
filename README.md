@@ -89,5 +89,3 @@ Paths assume a Windows-style checkout; adjust if needed.
 ## Legal
 
 This project is a **non-commercial fan modification**. *New Super Mario Bros. Wii*, Mario characters, and related assets are **trademarks and copyrights of Nintendo**. This repository does **not** include a full game dump, ISO, or WBFS. Do not redistribute copyrighted game files.
-
-Add a **`LICENSE`** file if you want explicit terms for **your** scripts and documentation; game data and Nintendo assets remain under Nintendo’s rights.
