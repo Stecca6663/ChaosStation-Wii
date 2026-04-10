@@ -1,14 +1,5 @@
 """
-Chaos Station v2 — Custom Level Pack for NSMBW
-
-Creates 3 harder-than-original levels:
-  1-1: "Welcome to Chaos" — Grassy outdoor gauntlet with hills, pipes, and varied terrain
-  1-2: "Underground Rumble" — Pipe to underground cave with tight corridors
-  1-3: "Sky High Chaos" — Athletic precision platforming over deadly gaps
-
-Each level uses the proven binary serialization (byte-perfect round-trip tested).
-? blocks are tileset objects (type 38) + sprite 212 for contents.
-Star coins use proper nybble differentiation (byte 4).
+Chaos Station v1 — Custom Level Pack for NSMBW
 """
 
 import os
