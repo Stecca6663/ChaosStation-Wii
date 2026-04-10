@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Generated output (run create_mod.py to produce these)
+output/
+title_logo.png
+title_logo.tpl
+staffroll_custom.bin
+
+# User-specific config (has hardcoded local paths)
+chaostation.json
+
+# Game ISO / disc images — do NOT distribute
+*.iso
+*.wbfs
+*.nkit.iso
+
+# Large binary / audio files
+*.wav
+*.brstm
+*.arc
+*.zip
+*.7z
+*.exe
+*.dll
+
+# Logs / temp text dumps
+*.log
+nul
+
+# Local tools (download separately)
+Dolphin-x64/
+NMFME/
+brawlcrate/
+brawlcrate_cli/
+lac/
+patchbasaar/
+reaggie-src/
+reggie_clone/
+vgmstream/
+extracted files/
