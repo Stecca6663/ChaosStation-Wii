@@ -3,13 +3,20 @@ import subprocess
 import re
 import wave
 
-VGAUDIO = "VGAudioCli.exe"
-FFMPEG = r"lac\tools\ffmpeg\ffmpeg.exe"
-INPUT_DIR = r"output\ChaosStation\Sound\stream"
+_HERE = os.path.dirname(os.path.abspath(__file__))
+VGAUDIO = os.path.join(_HERE, "VGAudioCli.exe")
+FFMPEG = os.path.join(_HERE, r"lac\tools\ffmpeg\ffmpeg.exe")
+INPUT_DIR = os.path.join(_HERE, r"output\ChaosStation\Sound\stream")
 
 TARGET_SAMPLERATE = 32000
 
-needs_4 = ["STRM_BGM_LAST_BOSS2.brstm", "STRM_BGM_MENU.brstm"]
+# Vanilla NSMBW uses 4ch (duplicated stereo pairs) for these streams; 2ch BRSTMs can break playback/looping.
+needs_4 = [
+    "STRM_BGM_LAST_BOSS2.brstm",
+    "STRM_BGM_MENU.brstm",
+    "STRM_BGM_CHIJOU.brstm",
+    "STRM_BGM_CHIKA.brstm",
+]
 needs_fast = {
     "BGM_LAST_BOSS1_lr.ry.32.brstm": "BGM_LAST_BOSS1_fast_lr.ry.32.brstm",
     "STRM_BGM_LAST_BOSS2.brstm": "STRM_BGM_LAST_BOSS2_FAST.brstm"
@@ -60,7 +67,7 @@ def rebuild_track(brstm_path):
     # 1. Decode to WAV
     print(f" [Action] Decoding BRSTM to WAV via VGAudio...")
     if os.path.exists(temp_wav): os.remove(temp_wav)
-    subprocess.call(f'{VGAUDIO} -c -i "{brstm_path}" -o "{temp_wav}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.call(f'"{VGAUDIO}" -c -i "{brstm_path}" -o "{temp_wav}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
     # 2. Duplicate channels if needed
     current_wav = temp_wav
@@ -84,15 +91,19 @@ def rebuild_track(brstm_path):
     # 3. Resample using FFmpeg
     print(f" [Action] Resampling to {TARGET_SAMPLERATE}Hz via FFmpeg...")
     if os.path.exists(resampled_wav): os.remove(resampled_wav)
-    subprocess.call(f'{FFMPEG} -y -i "{current_wav}" -ar {TARGET_SAMPLERATE} -c:a pcm_s16le "{resampled_wav}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.call(f'"{FFMPEG}" -y -i "{current_wav}" -ar {TARGET_SAMPLERATE} -c:a pcm_s16le "{resampled_wav}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
     # Check true resampled length to prevent Wii Engine truncation crashes
-    res_wav = subprocess.run([VGAUDIO, "-m", "-i", resampled_wav], capture_output=True, text=True)
+    # Try Python's wave module first; fall back to scaled original count
     real_sample_count = 0
-    for line in res_wav.stdout.split('\n'):
-        if "Sample count:" in line:
-            real_sample_count = int(re.search(r'\d+', line).group())
-            break
+    try:
+        with wave.open(resampled_wav, 'rb') as w:
+            real_sample_count = w.getnframes()
+    except Exception:
+        pass
+    if real_sample_count == 0:
+        ratio = TARGET_SAMPLERATE / meta["sample_rate"]
+        real_sample_count = int(meta["sample_count"] * ratio)
             
     # 4. Calculate new loop points
     loop_args = ""
@@ -112,7 +123,7 @@ def rebuild_track(brstm_path):
     # 5. Encode via VGAudioCli
     print(f" [Action] Encoding optimized BRSTM via VGAudioCli...")
     if os.path.exists(out_brstm): os.remove(out_brstm)
-    subprocess.call(f'{VGAUDIO} -c -i "{resampled_wav}" -o "{out_brstm}" {loop_args}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.call(f'"{VGAUDIO}" -c -i "{resampled_wav}" -o "{out_brstm}" {loop_args}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
     # 6. Safe replace
     if os.path.exists(out_brstm) and os.path.getsize(out_brstm) > 1000:
@@ -128,8 +139,10 @@ def rebuild_track(brstm_path):
 def main():
     print("--- Chaos Station Batch Music Optimizer ---")
     print("Using stable VGAudioCli + FFmpeg headless pipeline.")
-    for f in os.listdir(INPUT_DIR):
-        if f.endswith(".brstm") and "fast" not in f.lower():
+    # STRM_BGM_MENU is 8-channel and handled separately — skip to avoid WAV decode crash
+    skip = {"STRM_BGM_MENU.brstm"}
+    for f in sorted(os.listdir(INPUT_DIR)):
+        if f.endswith(".brstm") and "fast" not in f.lower() and f not in skip:
             rebuild_track(os.path.join(INPUT_DIR, f))
     print("Done!")
 

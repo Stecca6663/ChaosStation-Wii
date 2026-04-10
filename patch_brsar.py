@@ -26,6 +26,28 @@ ENTRIES = [
     (60, 'select_map09_rainbow_lr.n.32.brstm', 0x0004AB2C),
     (83, 'title_lr.ry.32.brstm',               0x0004AB78),
     (72, 'STRM_BGM_MENU.brstm',                0x0004ABB4),
+    # --- In-level BGM (added for Chaos Station) ---
+    ( 0, 'STRM_BGM_CHIJOU.brstm',             0x0004A820),  # Ground
+    ( 0, 'athletic_lr.n.32.brstm',            0x0004A8DC),  # Athletic
+    ( 0, 'STRM_BGM_CHIKA.brstm',              0x0004A85C),  # Underground
+    ( 0, 'BGM_OBAKE.32.brstm',                0x0004B1D0),  # Ghost House
+    ( 0, 'BGM_HIKOUSEN.32.brstm',             0x0004B038),  # Airship
+    ( 0, 'toride_lr.n.32.brstm',              0x0004AEF8),  # Tower
+    ( 0, 'BGM_SIRO.32.brstm',                 0x0004B2CC),  # Castle
+    ( 0, 'BGM_TORIDE_BOSS.32.brstm',          0x0004B3C0),  # Tower Boss
+    ( 0, 'shiro_boss_lr.n.32.brstm',          0x0004AF74),  # Castle Boss
+    # Hurry variants (offsets from patchbasaar/DEFAULT.BPTH)
+    ( 0, 'STRM_BGM_CHIJOU_FAST.brstm',        0x0004A898),
+    ( 0, 'STRM_BGM_CHIKA_FAST.brstm',         0x0004A764),
+    ( 0, 'athletic_fast_lr.n.32.brstm',       0x0004A91C),
+    ( 0, 'toride_fast_lr.n.32.brstm',         0x0004AF34),
+    ( 0, 'shiro_boss_fast_lr.n.32.brstm',     0x0004AFB4),
+    ( 0, 'BGM_HIKOUSEN_fast.32.brstm',        0x0004B074),
+    ( 0, 'BGM_OBAKE_fast.32.brstm',           0x0004B20C),
+    ( 0, 'BGM_SIRO_fast.32.brstm',              0x0004B304),
+    ( 0, 'BGM_TORIDE_BOSS_fast.32.brstm',     0x0004B400),
+    ( 0, 'BGM_SUICHU.32.brstm',               0x0004B794),  # Underwater (add when ready)
+    ( 0, 'BGM_SUICHU_fast.32.brstm',           0x0004B7D0),
     (13, 'BGM_LAST_BOSS1_lr.ry.32.brstm',      0x0004B52C),
     (12, 'BGM_LAST_BOSS1_fast_lr.ry.32.brstm', 0x0004B570),
     (70, 'STRM_BGM_LAST_BOSS2.brstm',          0x0004B640),
