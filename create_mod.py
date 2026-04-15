@@ -3131,29 +3131,28 @@ def create_level_2_6():
     a2.set_tileset(1, TILESET_CAVE)
     a2.set_background(770)
     a2.set_time(100)
-    
-    a2.add_zone(0, 0, 1200, 384, zone_id=0, music=MUSIC_UNDERGROUND)
 
-    # Arrival pipe
+    GY2 = 20   # floor tile row (consistent with all other levels)
+
+    a2.add_zone(0, 0, 1400, 384, zone_id=0, music=MUSIC_UNDERGROUND)
+
+    # Arrival from pipe (entrance 3) — pixel coords
     a2.add_entrance(3, x=48, y=288,
                     etype=ENTRANCE_PIPE_LEFT, zone_id=0,
                     dest_area=1, dest_entrance=2)
 
-    # Floor and Ceiling
-    a2.add_ground(0, 20, width=65, height=4)
-    a2.add_ground(0, 0, width=65, height=4)
+    # Flat floor and ceiling — extends well past the goal pole
+    # Floor: tile x=0→79 (1280px), ensuring 24 tiles after the pole at x=55
+    a2.add_ground(0, GY2, width=80, height=4)
+    a2.add_ground(0, 0,   width=80, height=4)
 
-    # A few desert coins and Pokeys for flavor in the secret room
-    a2.add_sprite(POKEY, x=300, y=256, zone_id=0)
-    a2.add_coin_line(15, 18, count=5)
+    # Enemy & coin flavor
+    a2.add_sprite(POKEY, x=10*16, y=(GY2-1)*16, zone_id=0)
+    a2.add_coin_line(15, GY2-2, count=8)
 
-    # Secret Goal Pole (red flag)
-    # Ground extends 20 tiles past the pole (x=46 → ground ends at x=68) for the
-    # victory walk-off animation to complete cleanly.
-    a2.add_staircase(35, 20, steps=6, direction=1)
-    a2.add_ground(41, 14, width=28, height=2)
-    a2.add_ground(41, 16, width=28, height=4)
-    a2.add_secret_goal(46, 11)
+    # Secret Goal Pole — pole top at GY2-10=10, same convention as every other goal.
+    # Floor runs to x=79; pole at x=55; 24 tiles of flat ground after the pole.
+    a2.add_secret_goal(55, GY2 - 10)
     
     level.save("output/ChaosStation/Stage/02-06.arc")
 
