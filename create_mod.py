@@ -3132,25 +3132,27 @@ def create_level_2_6():
     a2.set_background(770)
     a2.set_time(100)
     
-    a2.add_zone(0, 0, 1000, 384, zone_id=0, music=MUSIC_UNDERGROUND)
-    
+    a2.add_zone(0, 0, 1200, 384, zone_id=0, music=MUSIC_UNDERGROUND)
+
     # Arrival pipe
     a2.add_entrance(3, x=48, y=288,
                     etype=ENTRANCE_PIPE_LEFT, zone_id=0,
                     dest_area=1, dest_entrance=2)
-    
+
     # Floor and Ceiling
-    a2.add_ground(0, 20, width=50, height=4)
-    a2.add_ground(0, 0, width=50, height=4)
-    
+    a2.add_ground(0, 20, width=65, height=4)
+    a2.add_ground(0, 0, width=65, height=4)
+
     # A few desert coins and Pokeys for flavor in the secret room
     a2.add_sprite(POKEY, x=300, y=256, zone_id=0)
     a2.add_coin_line(15, 18, count=5)
-    
+
     # Secret Goal Pole (red flag)
+    # Ground extends 20 tiles past the pole (x=46 → ground ends at x=68) for the
+    # victory walk-off animation to complete cleanly.
     a2.add_staircase(35, 20, steps=6, direction=1)
-    a2.add_ground(41, 14, width=8, height=2)
-    a2.add_ground(41, 16, width=8, height=4)
+    a2.add_ground(41, 14, width=28, height=2)
+    a2.add_ground(41, 16, width=28, height=4)
     a2.add_secret_goal(46, 11)
     
     level.save("output/ChaosStation/Stage/02-06.arc")
