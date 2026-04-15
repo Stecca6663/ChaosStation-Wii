@@ -3005,6 +3005,42 @@ def create_level_2_5():
     level.save("output/ChaosStation/Stage/02-05.arc")
 
 
+def create_level_2_cannon():
+    """2-Cannon (02-36): keep vanilla layout, refresh cannon guard pressure."""
+    import os
+    from tools.u8archive import U8Archive
+    from tools.course_parser import parse_course_bin, serialize_course_bin, Sprite
+    import tools.sprite_db as db
+
+    src = 'extracted files/Stage/02-36.arc'
+    dst = 'output/ChaosStation/Stage/02-36.arc'
+
+    try:
+        arc = U8Archive.load(open(src, 'rb').read())
+    except Exception as e:
+        print(f"Skipping 2-Cannon: couldn't open {src} - {e}")
+        return
+
+    area = parse_course_bin(arc.get_file('course/course1.bin'))
+    z0 = area.zones[0].zone_id if area.zones else 0
+    SD = b'\x00\x00\x00\x00\x00\x00'
+
+    # Keep vanilla content and add a tighter final guard pair near the cannon.
+    keep = list(area.sprites)
+
+    keep.append(Sprite(stype=db.FIRE_BRO, x=1490, y=448, spritedata=SD, zone_id=z0, extra_byte=0))
+    keep.append(Sprite(stype=db.HAMMER_BRO, x=1580, y=448, spritedata=SD, zone_id=z0, extra_byte=0))
+
+    area.sprites = keep
+    area.loaded_sprites = sorted(set(s.stype for s in keep))
+    arc.set_file('course/course1.bin', serialize_course_bin(area))
+
+    os.makedirs('output/ChaosStation/Stage', exist_ok=True)
+    with open(dst, 'wb') as f:
+        f.write(arc.pack())
+    print(f'Saved: {dst}')
+
+
 def create_level_2_6():
     """
     Level 2-6: "Bramball Dunes"
@@ -6430,8 +6466,8 @@ def create_level_4_ghost_house():
     from tools.u8archive import U8Archive
     from tools.course_parser import (
         parse_course_bin, serialize_course_bin,
-        Sprite, LayerObject, parse_layer_data, serialize_layer_data,
-        Entrance, Zone, Bounding, Tileset
+        Sprite, LayerObject, serialize_layer_data,
+        Entrance, Zone, Bounding, Tileset, Background
     )
     import tools.sprite_db as db
 
@@ -6480,6 +6516,8 @@ def create_level_4_ghost_house():
     a1_spr(276, END_X, 14)
     area1.entrances.append(Entrance(x=END_X*16, y=16*16, entrance_id=1, dest_area=2, dest_entrance=0, etype=db.ENTRANCE_DOOR, zone_id=0, layer=0, path=0, unk1=0, unk2=0, settings=0, leave_level=0, cp_direction=0))
 
+    s1(db.STAR_COIN, 132*16, (WATER_Y-4)*16, b'\x00\x00\x00\x00\x00\x00', 0)
+    s1(db.MIDWAY_FLAG, 140*16, (WATER_Y-1)*16, b'\x00\x00\x00\x01\x00\x00', 0)
     area1.loaded_sprites = sorted(set(s.stype for s in area1.sprites))
     arc.set_file('course/course1.bin', serialize_course_bin(area1))
     arc.set_file('course/course1_bgdatL0.bin', serialize_layer_data(area1.layer0))
@@ -14171,6 +14209,9 @@ if __name__ == '__main__':
 
     print("[12/18] Modifying Castle 2 (02-24): Roy's Three-Way Maze")
     create_level_2_castle()
+
+    print("[W2] Modifying 2-Cannon (02-36): Dune Burst")
+    create_level_2_cannon()
 
 
     print("[11/20] Creating Level 2-5: Sunbaked Ruins")
