@@ -83,7 +83,6 @@ SPYGUY             = 351   # Shy Guy variant (Newer NSMBW specific)
 
 CHEEP_CHEEP        = 115   # Standard fish; swims in straight line
 BIG_CHEEP_CHEEP    = 116   # Larger Cheep Cheep variant
-SPINY_CHEEP_CHEEP  = 395   # Spiny Cheep Cheep — relentlessly chases Mario, hard to freeze
 PORCU_PUFFER       = 151   # Porcupine Blowfish — expands on approach
 CHEEP_CHOMP        = 180   # Cheep Chomp (Boss Bass) — large pursuing fish (bakubaku.arc)
 BLOOPER            = 111   # Blooper squid — bounces through water
@@ -91,8 +90,6 @@ BLOOPER_NANNY      = 112   # Blooper with baby Bloopers attached
 URCHIN             = 193   # Sea urchin — stationary spiny hazard
 MEGA_URCHIN        = 194   # Giant Urchin variant (verify ID if 143 is normal)
 FISHBONE           = 196   # Fishbone skeleton — tracks player in water (ONLY works underwater!)
-CLOUD_AREA         = 234   # Cloud Area controller; type 4/5 = purple death cloud fields
-JELLYBEAM          = 425   # Jellybeam — ceiling jellyfish light beams; use zone darkness (full dark zone)
 CHAIN_CHOMP        = 146   # Chain Chomp — lunges at player on a chain
 
 # ──────── Enemies — Ice / Snow ────────
@@ -113,7 +110,7 @@ PODOBOO            = 46    # Podoboo (Lava Bubble) — leaps from lava (bubble.a
 FIRE_SNAKE         = 158   # Chain of fire balls in a snake pattern
 FIRE_BAR           = 62    # Rotating fire bar hazard (firebar_center.arc)
                             # Arc also contains 2 models for the pivot center
-MECHAKOOPA         = 232   # Mechanical Koopa — walks and shoots sparks
+MECHAKOOPA         = 439   # Mechanical Koopa — walks and shoots sparks
 FLAME_CANNON       = 114   # Flame-blaster cannon base (fire_cannon.arc)
 FLAME_JET_SMALL    = 117   # Small flame jet (fire_cannon.arc)
 FLAME_JET_LARGE    = 307   # Large flame jet (fire_cannon.arc)
@@ -143,7 +140,7 @@ BOSS_ESCAPE_PLAT   = 50    # Skeleton platform for escape sequences (boss_koopa_
 BOSS_JR_BRIDGE     = 405   # Bridge for Bowser Jr. battles (boss_koopaJr_down_asiba.arc)
 BOSS_SHUTTER       = 407   # Heavy pillar that seals boss arena (boss_shutter.arc)
 BOSS_SHUTTER_FINAL = 431   # Spiked pillar for final Bowser fight (boss_shutter_koopa.arc)
-PEACH_CAGE         = 439   # Fake Peach in Cage cutscene (cage_boss_koopa.arc) — sprite 439
+PEACH_CAGE         = 439   # Cage holding Princess Peach in finale (cage_boss_koopa.arc)
 
 # ──────── Items / Blocks ────────
 
@@ -168,9 +165,8 @@ SUPER_GUIDE_BLOCK  = 477      # Triggers automated Super Guide assistance (block
 HINT_MOVIE_BLOCK   = 443      # Plays pre-recorded gameplay hint movie (block_otehon.arc)
 BEANSTALK          = 433      # Growing vine/beanstalk (block_tsuta.arc)
                                # Uses SHP0+SRT0 animation for organic growth effect
-POW_BLOCK          = 16       # POW Block — screen-shaking ground pound effect
-P_SWITCH           = 41       # Blue P-Switch — converts bricks↔coins
-RED_SWITCH         = 42       # Red "!" Switch — turns outlined red blocks solid
+POW_BLOCK          = 41       # POW Block — screen-shaking ground pound effect
+P_SWITCH           = 42       # P-Switch — converts bricks↔coins
 
 # ──────── Controllers / WARNING ────────
 
@@ -242,9 +238,6 @@ TILESET_GRASS      = "Pa1_nohara"        # World 1/overworld ground, vegetation
 TILESET_UNDERGROUND= "Pa0_jyotyu_chika"  # Underground Pa0 variant
 TILESET_CAVE       = "Pa1_chika"         # Cave/underground walls and ceiling
 TILESET_CASTLE     = "Pa1_shiro"         # Castle bricks and lava channels
-TILESET_LAVA       = "Pa0_jyotyu_yougan" # World 8 lava variant of standard tileset
-TILESET_KOOPA_OUT  = "Pa1_koopa_out"     # Bowser outdoor — World 8 main terrain tileset
-TILESET_LAVA_CLIFF = "Pa1_gake_yougan"   # Lava cliff tileset (08-06 style)
 TILESET_DESERT     = "Pa1_sabaku"        # Sand, quicksand, desert platforms
 TILESET_FOREST     = "Pa1_daishizen"     # Forest / jungle overworld tileset
 TILESET_SNOW       = "Pa1_setsugen"      # Snow/ice ground and platforms
@@ -267,7 +260,6 @@ BG_ATHLETIC_SKY_2  = 20994  # Athletic cloud sky — layer 2 (use with BG_ATHLET
 BG_DESERT          = 1026   # Desert sandy sky (World 2)
 BG_SNOW            = 1794   # Snowy sky (World 3)
 BG_CASTLE          = 10754  # Castle dark background (boss rooms, W1-Castle)
-BG_LAVA            = 11010  # World 8 outdoor lava sky background
 BG_GHOST_HOUSE     = 3842   # Interior Ghost House dark BG
 
 # ══════════════════════════════════════════════════════
@@ -361,16 +353,11 @@ class StandardObjs:
     Used across all themes for common objects: bricks, pipes, ? blocks.
     Internal BRRES: Pa0_jyotyu.arc — shared by all levels.
     """
-    INVISIBLE_BLOCK  = 20   # Invisible block (hidden ? block)
-    BRICK            = 26   # Breakable brick block (standard brown)
-    BRICK_COIN       = 27   # Brick block with coins
-    BRICK_POWERUP    = 28   # Brick block with adaptive power-up
-    BRICK_STAR       = 29   # Brick block with star
-    BRICK_VINE       = 31   # Brick block with vine
-    # Decorative aliases (layer 0 background objects — no collision)
-    FLOWER_A         = 97   # Background decoration (small)
-    FLOWER_B         = 98   # Background decoration (medium)
-    FLOWER_C         = 99   # Background decoration (large)
+    BRICK            = 20   # Breakable brick block
+    FLOWER_A         = 26   # Decorative flower (small)
+    FLOWER_B         = 27   # Decorative flower (medium)
+    FLOWER_C         = 28   # Decorative flower (large)
+    BRICK_SINGLE     = 31   # Single brick block
     QUESTION_BLOCK   = 38   # ? block terrain object (visual only; add sprite 207 for contents)
     FENCE            = 45   # Climbable fence
     CLOUD_PLATFORM   = 55   # Cloud platform (decorative; use BASIC_PLATFORM sprite for physics)

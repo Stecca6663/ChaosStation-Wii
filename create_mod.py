@@ -1,5 +1,14 @@
 """
-Chaos Station v1 — Custom Level Pack for NSMBW
+Chaos Station v2 — Custom Level Pack for NSMBW
+
+Creates 3 harder-than-original levels:
+  1-1: "Welcome to Chaos" — Grassy outdoor gauntlet with hills, pipes, and varied terrain
+  1-2: "Underground Rumble" — Pipe to underground cave with tight corridors
+  1-3: "Sky High Chaos" — Athletic precision platforming over deadly gaps
+
+Each level uses the proven binary serialization (byte-perfect round-trip tested).
+? blocks are tileset objects (type 38) + sprite 212 for contents.
+Star coins use proper nybble differentiation (byte 4).
 """
 
 import os
@@ -1656,6 +1665,8 @@ def create_level_2_2():
     # Entrance 0 = enter from pipe (area 1)
     a2.add_entrance(0, x=ZX2 + 80, y=(F1 - 3) * 16,
                     etype=ENTRANCE_PIPE_DOWN, zone_id=0)
+    a2.add_entrance(1, x=(TX2 + 65) * 16, y=(F2 - 1) * 16,
+                    etype=ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
 
     # Entrances 4 & 5: Floor 1 -> Floor 2 pipe
     a2.add_entrance(4, x=(TX2 + 55) * 16 + 16, y=(F1 - 3) * 16,
@@ -1964,7 +1975,7 @@ def create_level_tower():
     # Keep ONLY essential non-enemy sprites, strip everything else
     essential_types = {
         32,   # Star coins
-        96,   # Brown spinning/rotating platforms (critical for traversal!)
+        96,   # Spine Coaster cars (brown rideable platforms)
         144,  # Red coins
         156,  # Red coin ring
         176,  # Roulette block
@@ -1976,6 +1987,7 @@ def create_level_tower():
         310,  # Area controller
         345,  # Wire net mesh (structural)
         346,  # Wire net mesh 2 (structural)
+        356,  # Brown segment/crushing platforms — the main traversal mechanic!
         436,  # System controller
         477,  # System controller 2
     }
@@ -2419,7 +2431,6 @@ def create_riivolution_xml():
         <folder external="/ChaosStation/Object" disc="/Object" />
         <folder external="/ChaosStation/Layout" disc="/Layout" />
         <folder external="/ChaosStation/US/Layout" disc="/US/Layout" />
-        <folder external="/ChaosStation/US/EngUS/staffroll" disc="/US/EngUS/staffroll" />
         <folder external="/ChaosStation/EU/Layout" disc="/EU/Layout" />
         <folder external="/ChaosStation/Sound/stream" disc="/Sound/stream" />
         <file external="/ChaosStation/Sound/wii_mj2d_sound.brsar" disc="/Sound/wii_mj2d_sound.brsar" />
@@ -3254,6 +3265,64 @@ def create_level_2_tower():
     with open('output/ChaosStation/Stage/02-22.arc', 'wb') as f:
         f.write(data)
     print(f'Saved: output/ChaosStation/Stage/02-22.arc ({len(data)} bytes)')
+
+
+def create_level_2_cannon():
+    """Cannon (02-36): Desert Dash — add a sandy gauntlet before the warp cannon.
+    Keeps all vanilla cannon/launcher sprites, adds desert enemies to pressure the player.
+    """
+    import os
+    from tools.u8archive import U8Archive
+    from tools.course_parser import parse_course_bin, serialize_course_bin, Sprite
+    import tools.sprite_db as db
+
+    with open('extracted files/Stage/02-36.arc', 'rb') as f:
+        arc = U8Archive.load(f.read())
+
+    area = parse_course_bin(arc.get_file('course/course1.bin'))
+    area.settings.time_limit = 200
+
+    SD = b'\x00\x00\x00\x00\x00\x00'
+    Z = area.zones[0].zone_id  # use correct zone id
+    # Ground is around y=720, zone spans y=256-768, entrance at x=464
+
+    def add(stype, x, y):
+        area.sprites.append(Sprite(stype=stype, x=x, y=y, spritedata=SD, zone_id=Z, extra_byte=0))
+
+    # Early section: easy desert intro
+    add(db.GOOMBA,      560, 720)
+    add(db.GOOMBA,      640, 720)
+    add(db.SPINY,       720, 720)
+
+    # Mid section: heat rises
+    add(db.POKEY,       820, 720)
+    add(db.HAMMER_BRO,  960, 720)
+    add(db.SPINY,      1040, 720)
+    add(db.BOB_OMB,    1120, 720)
+
+    # ParaGoombas swooping from above
+    add(db.PARAGOOMBA,  620, 590)
+    add(db.PARAGOOMBA,  880, 570)
+    add(db.PARAGOOMBA, 1140, 590)
+
+    # Late section: intense push to the cannon
+    add(db.POKEY,      1200, 720)
+    add(db.FIRE_BRO,   1300, 720)
+    add(db.BOB_OMB,    1400, 720)
+    add(db.HAMMER_BRO, 1480, 720)
+
+    # Coins to guide the path
+    for cx in range(520, 1500, 120):
+        add(db.COIN, cx, 672)
+
+    area.loaded_sprites = sorted(set(s.stype for s in area.sprites))
+    arc.set_file('course/course1.bin', serialize_course_bin(area))
+
+    os.makedirs('output/ChaosStation/Stage', exist_ok=True)
+    data = arc.pack()
+    with open('output/ChaosStation/Stage/02-36.arc', 'wb') as f:
+        f.write(data)
+    print(f'Saved: output/ChaosStation/Stage/02-36.arc ({len(data)} bytes)')
 
 
 def create_ambush_2():
@@ -4932,144 +5001,81 @@ def create_level_3_cannon():
 
 
 def create_level_3_4():
-    """Level 3-4: Switchblock Spire — ! Switch block labyrinth.
+    """Level 3-4: Switchblock Spire — edit-on-base approach.
 
-    This level's core mechanic is the dotted-line blocks (Sprite 385) that
-    become solid red platforms after the ! Switch on the World 3 map is
-    activated. These blocks are HARDCODED to the map flag — we MUST preserve
-    them exactly as-is.
-
-    Strategy: Keep vanilla terrain and all ! Switch blocks/controllers.
-    Replace non-essential enemies with ice-themed hazards. Add Ice Bros,
-    Cooligans, Dry Bones, and Icicles for a more dangerous experience,
-    while keeping the puzzle-platforming feel of the original intact.
+    Load vanilla 03-04.arc, strip basic enemies, add ice-themed replacements.
+    Area 3 left vanilla so the Goal Pole is guaranteed intact.
     """
-    import copy
     import os
     from tools.u8archive import U8Archive
     from tools.course_parser import parse_course_bin, serialize_course_bin, Sprite
+    import tools.sprite_db as db
 
     with open('extracted files/Stage/03-04.arc', 'rb') as f:
         arc = U8Archive.load(f.read())
 
-    # ═══════════ AREA 1: Main Level ═══════════
-    area1 = parse_course_bin(arc.get_file('course/course1.bin'))
+    SD = b'\x00\x00\x00\x00\x00\x00'
 
-    # Essential sprites to KEEP (! blocks, controllers, coins, star coins, etc.)
-    essential_types = {
-        20,   # Brick blocks
-        32,   # Star Coins
-        113,  # Goal Pole
-        147,  # Coins
-        176,  # Roulette Block
-        188,  # Midway Flag
-        207,  # ? Block sprite (contents controller)
-        221,  # Invisible block
-        310,  # Area controller
-        374,  # Snow particle effect
-        385,  # ★ DOTTED-LINE / ! SWITCH BLOCKS — MUST KEEP
-        386,  # Map controller
-        472,  # Level controller
-        475,  # ★ ! SWITCH CONTROLLER — MUST KEEP
-        477,  # System controller
-        234, 367, # Zone transitions and camera triggers (CRITICAL for Goal Pole rendering)
-        313, 315, # Bolt/Goal controllers
+    # Strip vanilla enemies to make room for ice replacements.
+    STRIP_TYPES = {
+        db.GOOMBA,              # 20
+        db.KOOPA,               # 57
+        db.KOOPA_PARATROOPA,    # 58
+        db.FIRE_BRO,            # 80
     }
 
-    new_sprites = []
-    for s in area1.sprites:
-        if s.stype in essential_types:
-            new_sprites.append(s)
+    # ═══════════ AREA 1: Main Level ═══════════
+    area1 = parse_course_bin(arc.get_file('course/course1.bin'))
+    area1.sprites = [s for s in area1.sprites if s.stype not in STRIP_TYPES]
+    # Area 1's zone_id is 2 — all added sprites must match or the game breaks
+    Z1 = area1.zones[0].zone_id  # = 2
 
-    SD = b'\x00\x00\x00\x00\x00\x00'
-    def add(stype, x, y, spritedata=SD):
-        new_sprites.append(Sprite(stype=stype, x=x, y=y,
-                                  spritedata=spritedata, zone_id=0, extra_byte=0))
+    def add1(stype, x, y):
+        area1.sprites.append(Sprite(stype=stype, x=x, y=y, spritedata=SD, zone_id=Z1, extra_byte=0))
 
-    # ── ICE-THEMED ENEMIES scattered through the ! block corridors ──
-
-    from tools.sprite_db import COOLIGAN, DRY_BONES, ICE_BRO, ICICLE
-    # Early section: Cooligans sliding through the lower platforms
-    add(COOLIGAN, 1000, 480)
-    add(COOLIGAN, 1200, 480)
-    add(DRY_BONES, 800, 480)
-    add(DRY_BONES, 1400, 480)
-
-    # Mid section: Ice Bros on elevated ! block platforms
-    add(ICE_BRO, 2200, 400)
-    add(ICE_BRO, 3000, 384)
-    add(DRY_BONES, 2500, 480)
-    add(DRY_BONES, 2800, 480)
-
-    # Icicles hanging from ceilings along the corridor
+    # Early section
+    add1(db.COOLIGAN,  1000, 480)
+    add1(db.COOLIGAN,  1200, 480)
+    add1(db.DRY_BONES,  800, 480)
+    add1(db.DRY_BONES, 1400, 480)
+    # Mid section
+    add1(db.ICE_BRO,   2200, 400)
+    add1(db.ICE_BRO,   3000, 384)
+    add1(db.DRY_BONES, 2500, 480)
+    add1(db.DRY_BONES, 2800, 480)
+    # Icicles along the ceiling
     for x_off in range(1600, 4000, 300):
-        add(ICICLE, x_off, 200)
+        add1(db.ICICLE, x_off, 200)
+    # Post-midway
+    add1(db.COOLIGAN,  4400, 480)
+    add1(db.COOLIGAN,  4600, 480)
+    add1(db.ICE_BRO,   4800, 384)
+    add1(db.COOLIGAN,  5000, 480)
+    add1(db.DRY_BONES, 5200, 480)
+    add1(db.ICE_BRO,   5600, 400)
+    # Late gauntlet
+    add1(db.COOLIGAN,  6000, 480)
+    add1(db.COOLIGAN,  6200, 480)
+    add1(db.ICE_BRO,   6500, 400)
+    add1(db.DRY_BONES, 6800, 480)
+    add1(db.ICE_BRO,   7000, 384)
+    add1(db.COOLIGAN,  7400, 384)
 
-    # Post-midway: tougher encounters
-    add(COOLIGAN,   4400, 480)
-    add(COOLIGAN,   4600, 480)
-    add(ICE_BRO,    4800, 384)
-    add(COOLIGAN,   5000, 480)
-    add(DRY_BONES,  5200, 480)
-    add(ICE_BRO,    5600, 400)
-
-    # Late section: intense gauntlet before the pipe
-    add(COOLIGAN, 6000, 480)
-    add(COOLIGAN, 6200, 480)
-    add(ICE_BRO,  6500, 400)
-    add(DRY_BONES, 6800, 480)
-    add(ICE_BRO, 7000, 384)
-    add(COOLIGAN, 7400, 384)
-
-    area1.sprites = new_sprites
-    area1.loaded_sprites = sorted(set(s.stype for s in new_sprites))
+    area1.loaded_sprites = sorted(set(s.stype for s in area1.sprites))
     arc.set_file('course/course1.bin', serialize_course_bin(area1))
 
     # ═══════════ AREA 2: Underground Pipe Section ═══════════
-    SD = b'\x00\x00\x00\x00\x00\x00'
     area2 = parse_course_bin(arc.get_file('course/course2.bin'))
-
-    new2 = []
-    for s in area2.sprites:
-        if s.stype in essential_types:
-            new2.append(s)
-
-    # Add underground enemies
-    new2.append(Sprite(stype=SWOOP, x=600, y=400, spritedata=SD, zone_id=0, extra_byte=0))
-    new2.append(Sprite(stype=SWOOP, x=1000, y=400, spritedata=SD, zone_id=0, extra_byte=0))
-    new2.append(Sprite(stype=DRY_BONES, x=800, y=500, spritedata=SD, zone_id=0, extra_byte=0))
-    new2.append(Sprite(stype=BUZZY_BEETLE, x=1200, y=500, spritedata=SD, zone_id=0, extra_byte=0))
-
-    area2.sprites = new2
-    area2.loaded_sprites = sorted(set(s.stype for s in new2))
+    area2.sprites = [s for s in area2.sprites if s.stype not in STRIP_TYPES]
+    Z2 = area2.zones[0].zone_id
+    for x, y, stype in [(600, 400, db.SWOOP), (1000, 400, db.SWOOP),
+                        (800, 500, db.DRY_BONES), (1200, 500, db.BUZZY_BEETLE)]:
+        area2.sprites.append(Sprite(stype=stype, x=x, y=y, spritedata=SD, zone_id=Z2, extra_byte=0))
+    area2.loaded_sprites = sorted(set(s.stype for s in area2.sprites))
     arc.set_file('course/course2.bin', serialize_course_bin(area2))
 
-    # ═══════════ AREA 3: Post-Pipe Finale ═══════════
-    area3 = parse_course_bin(arc.get_file('course/course3.bin'))
-
-    new3 = []
-    for s in area3.sprites:
-        if s.stype in essential_types:
-            new3.append(s)
-
-    # Add final enemies before the goal
-    new3.append(Sprite(stype=COOLIGAN, x=500, y=470, spritedata=SD, zone_id=0, extra_byte=0))
-    new3.append(Sprite(stype=COOLIGAN, x=650, y=470, spritedata=SD, zone_id=0, extra_byte=0))
-    new3.append(Sprite(stype=DRY_BONES, x=750, y=470, spritedata=SD, zone_id=0, extra_byte=0))
-
-    area3.sprites = new3
-    area3.loaded_sprites = sorted(set(s.stype for s in new3))
-    arc.set_file('course/course3.bin', serialize_course_bin(area3))
-    
-    # Add a solid bridge of BRICK_BLOCKS to connect the final pipe platform to the Goal Pole
-    # The gap stretches from X=512 to X=880 (Pixel coords), Y=464
-    new3 = area3.sprites
-    for bridge_x in range(512, 880, 16):
-        new3.append(Sprite(stype=20, x=bridge_x, y=496, spritedata=SD, zone_id=0, extra_byte=0))
-        
-    area3.sprites = new3
-    area3.loaded_sprites = sorted(set(s.stype for s in new3))
-    arc.set_file('course/course3.bin', serialize_course_bin(area3))
+    # ═══════════ AREA 3: VANILLA UNTOUCHED ═══════════
+    # Goal Pole lives here — don't touch it.
 
     # Save
     data = arc.pack()
@@ -6337,7 +6343,7 @@ def create_level_4_5():
     # CRITICAL: Missing Entrance 0! This is why the level crashed/killed Mario instantly.
     a.add_entrance(0, 4*16, 21*16, etype=db.ENTRANCE_NORMAL)
     a.add_entrance(1, 250*16, 20*16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-
+    
     # Spawn Mario (Sprite ID 10) directly on top of the entrance at Y=21
     a.add_sprite(10, 4*16, 21*16, spritedata=b'\x00\x00\x00\x00\x00\x00')
 
@@ -6372,7 +6378,7 @@ def create_level_4_5():
             # Place a Star Coin
             sx = curr_x * 16 + 8
             sy = (y_top - 4) * 16
-            a.add_sprite(db.STAR_COIN, sx, sy, spritedata=bytes([0, 0, 0, 0, star_coins_placed, 0]))
+            a.add_sprite(db.STAR_COIN, sx, sy, spritedata=bytes([0, 0, 0, 0, 0, star_coins_placed]))
             star_coins_placed += 1
         elif random.random() < 0.3:
             # Place a Goomba or Red Koopa (spritedata=1)
@@ -6408,7 +6414,7 @@ def create_level_4_5():
     while star_coins_placed < 3:
         sx = (400 + star_coins_placed*10) * 16
         sy = 15 * 16
-        a.add_sprite(db.STAR_COIN, sx, sy, spritedata=bytes([0, 0, 0, 0, star_coins_placed, 0]))
+        a.add_sprite(db.STAR_COIN, sx, sy, spritedata=bytes([0, 0, 0, 0, 0, star_coins_placed]))
         star_coins_placed += 1
 
     # End platform and Goal Pole
@@ -6423,18 +6429,13 @@ def create_level_4_5():
 
 
 def create_level_4_ghost_house():
-    """4-GH: Haunted Reef
-    
-    A Ghost House built over a flooded basement.
-    Area 1 (Zone 0): The Flooded Foyer (horizontal puzzle over water)
-                     - Door to Area 2 (Atrium)
-                     - Hidden Pipe to Area 1, Zone 1 (Secret Basement)
-    Area 1 (Zone 1): Secret Basement (Underwater maze) -> Pipe to Area 3 (Secret Exit)
-    Area 2: Haunted Atrium (vertical climb) -> Door to Area 3 (Normal Exit)
-    Area 3: The Outskirts (Goal Poles)
+    """4-GH: Haunted Reef — flooded ghost house with secret basement exit.
+    Area 1: Long swim + floating platforms (door to Area 2)
+    Area 2: Vertical haunted atrium (door/pipe split to Areas 3 & 4)
+    Area 3: Secret underwater basement (pipe to Area 4 secret exit)
+    Area 4: The Outskirts — normal + secret Goal Poles
     """
     import os
-    import struct
     from tools.u8archive import U8Archive
     from tools.course_parser import (
         parse_course_bin, serialize_course_bin,
@@ -6446,109 +6447,47 @@ def create_level_4_ghost_house():
     with open('extracted files/Stage/04-21.arc', 'rb') as f:
         arc = U8Archive.load(f.read())
 
-    def clear_area(area, t0, t1, t2):
-        area.sprites.clear(); area.layer0.clear(); area.layer1.clear(); area.layer2.clear()
-        area.entrances.clear(); area.zones.clear(); area.boundings.clear()
-        area.tileset = Tileset(slot0=t0, slot1=t1, slot2=t2, slot3='')
-
     # ════════════════════════════════════════════════════
-    #   AREA 1: Foyer (Zone 0) & Secret Basement (Zone 1)
+    #   AREA 1 — The Flooded Foyer (Long Swim)
     # ════════════════════════════════════════════════════
     area1 = parse_course_bin(arc.get_file('course/course1.bin'))
-    clear_area(area1, db.TILESET_STANDARD, db.TILESET_GHOST_HOUSE, db.TILESET_UNDERGROUND)
+    area1.sprites.clear(); area1.layer0.clear(); area1.layer1.clear(); area1.layer2.clear()
+    area1.entrances.clear(); area1.zones.clear(); area1.boundings.clear()
+    area1.tileset = Tileset(slot0=db.TILESET_STANDARD, slot1=db.TILESET_GHOST_HOUSE, slot2=db.TILESET_GRASS, slot3='')
     area1.settings.time_limit = 500
+    area1.zones.append(Zone(x=256, y=256, w=3400, h=368, zone_id=0, music=db.MUSIC_GHOST_HOUSE, cam_mode=0, cam_zoom=0, visibility=36))
+    area1.boundings.append(Bounding(upper=0, lower=0, upper2=0, lower2=0, bound_id=0, mp_cam_zoom=15, upper3=0, lower3=0))
 
-    # Zone 0: Flooded Foyer (starts at x=256, y=256)
-    Z0X, Z0Y = 256, 256
-    area1.zones.append(Zone(x=Z0X, y=Z0Y, w=5000, h=400, zone_id=0, music=db.MUSIC_GHOST_HOUSE, cam_mode=0, visibility=36))
-    area1.boundings.append(Bounding(upper=0, lower=0, upper2=0, lower2=0, bound_id=0, mp_cam_zoom=10))
+    def a1_spr(stype, x, y, data=b'\x00'*6):
+        area1.sprites.append(Sprite(stype=stype, x=x*16, y=y*16, spritedata=data, zone_id=0, extra_byte=0))
+    def a1_obj(ot, x, y, w=1, h=1):
+        area1.layer1.append(LayerObject(tileset=2, obj_type=ot, x=x, y=y, w=w, h=h))
 
-    # Zone 1: Secret Basement (starts at x=6000, y=256)
-    Z1X, Z1Y = 6000, 256
-    area1.zones.append(Zone(x=Z1X, y=Z1Y, w=2000, h=400, zone_id=1, music=db.MUSIC_UNDERWATER, cam_mode=0, visibility=36))
-    area1.boundings.append(Bounding(upper=0, lower=0, upper2=0, lower2=0, bound_id=1, mp_cam_zoom=10))
+    GY = 28
+    a1_spr(db.WATER_FILL, 0, 18, b'\x00\x00\x00\x00\x00\x00')
+    a1_obj(db.GrassObjs.GROUND_TOP, 0, GY, 210, 1)
+    a1_obj(db.GrassObjs.GROUND_FILL, 0, GY+1, 210, 4)
+    area1.entrances.append(Entrance(x=2*16, y=(GY-1)*16, entrance_id=0, dest_area=0, dest_entrance=0, etype=db.ENTRANCE_NORMAL, zone_id=0, layer=0, path=0, unk1=0, unk2=0, settings=0, leave_level=0, cp_direction=0))
+    a1_spr(10, 2, GY-1)
 
-    def o1(ot, x, y, w=1, h=1): area1.layer1.append(LayerObject(tileset=1, obj_type=ot, x=x, y=y, w=w, h=h))
-    def o2(ot, x, y, w=1, h=1): area1.layer1.append(LayerObject(tileset=2, obj_type=ot, x=x, y=y, w=w, h=h))
-    def o0(ot, x, y, w=1, h=1): area1.layer1.append(LayerObject(tileset=0, obj_type=ot, x=x, y=y, w=w, h=h))
-    def s1(stype, x, y, data=b'\x00'*6, z=0): area1.sprites.append(Sprite(stype=stype, x=x, y=y, spritedata=data, zone_id=z, extra_byte=0))
-    CG_TOP, CG_FIL = 19, 23 # Underground floor tiles
+    for i, bx in enumerate(range(15, 185, 12)):
+        w = (bx % 3) + 3
+        y_offset = (bx % 7) + 3
+        a1_obj(db.GrassObjs.GROUND_TOP, bx, GY-y_offset, w, 1)
+        a1_obj(db.GrassObjs.GROUND_FILL, bx, GY-y_offset+1, w, 1)
+        fish_y = GY - (bx % 5) - 1
+        a1_spr(db.FISHBONE, bx + 2, fish_y)
+        if i % 2 == 0:
+            a1_spr(db.FISHBONE, bx + 6, fish_y - 2)
+        a1_spr(db.BOO, bx, GY-y_offset-3)
+        if i % 3 == 0:
+            a1_spr(db.BIG_BOO, bx + 5, GY-y_offset-5)
 
-    # -- Z0: The Foyer Layout --
-    START_X = 18
-    WATER_Y = 28 # Tile Y where water surface sits
-    FLOOR_Y = 35 # Bottom of the level
-    
-    # Ent 0: Main Start
-    area1.entrances.append(Entrance(x=(START_X+2)*16, y=(WATER_Y-3)*16, entrance_id=0, dest_area=0, dest_entrance=0, etype=0, zone_id=0))
-
-    # Water fill for the entire bottom of Z0
-    s1(db.WATER_FILL, (START_X-2)*16, WATER_Y*16, b'\x00\x00\x00\x00\x00\x00', 0)
-
-    # Starting platform
-    o2(CG_TOP, START_X, WATER_Y-1, 8, 1)
-    o2(CG_FIL, START_X, WATER_Y, 8, 6)
-    
-    # Floating boxes/blocks over water
-    for bx in range(35, 120, 15):
-        s1(db.QUESTION_BLOCK, bx*16, (WATER_Y-4)*16, b'\x00\x00\x00\x00\x00\x00', 0)
-        s1(db.FISHBONE, (bx+5)*16, (WATER_Y+2)*16, b'\x00\x00\x00\x00\x00\x00', 0)
-        s1(db.BOO, (bx-4)*16, (WATER_Y-8)*16, z=0)
-
-    # Midway island
-    o2(CG_TOP, 140, WATER_Y-2, 10, 1)
-    o2(CG_FIL, 140, WATER_Y-1, 10, 6)
-    s1(db.QUESTION_BLOCK, 145*16, (WATER_Y-6)*16, b'\x00\x00\x00\x01\x00\x00', 0) # Mushroom
-    
-    # Fake door looping back
-    s1(276, 148*16, (WATER_Y-2)*16, z=0)
-    area1.entrances.append(Entrance(x=148*16, y=(WATER_Y-4)*16, entrance_id=1, dest_area=1, dest_entrance=0, etype=6, zone_id=0)) # Door to Start
-
-    # Final Foyer Platform
-    o2(CG_TOP, 200, WATER_Y-1, 30, 1)
-    o2(CG_FIL, 200, WATER_Y, 30, 6)
-    
-    # Correct door to Area 2 (Atrium)
-    s1(276, 210*16, (WATER_Y-1)*16, z=0)
-    area1.entrances.append(Entrance(x=210*16, y=(WATER_Y-3)*16, entrance_id=2, dest_area=2, dest_entrance=0, etype=6, zone_id=0))
-
-    # Secret Hidden Pipe underwater (Entrance 3 drops to Zone 1, ID 4)
-    o0(95, 220, WATER_Y+3, 2, 2) # Pipe Entry Down
-    o0(94, 220, WATER_Y+5, 2, 2) # Body
-    area1.entrances.append(Entrance(x=220*16, y=(WATER_Y+3)*16, entrance_id=3, dest_area=1, dest_entrance=4, etype=2, zone_id=0)) # Pipe Down
-
-    # Star Coin 1
-    s1(db.STAR_COIN, 215*16, (WATER_Y-7)*16, b'\x00\x00\x00\x00\x00\x00', 0)
-
-    # -- Z1: Secret Basement Underwater --
-    Z1_START_X = 380
-    Z1_WATER_Y = 16 
-    
-    # Water fill for entire Z1
-    s1(db.WATER_FILL, (Z1_START_X)*16, Z1_WATER_Y*16, b'\x00\x00\x00\x00\x00\x00', 1)
-    
-    # Arrival from Foyer Pipe (Drops from ceiling into water)
-    o0(94, Z1_START_X+5, 16, 2, 2) # Body
-    o0(95, Z1_START_X+5, 18, 2, 2) # Entry Up
-    area1.entrances.append(Entrance(x=(Z1_START_X+5)*16, y=18*16, entrance_id=4, dest_area=1, dest_entrance=3, etype=3, zone_id=1)) # Pipe Up Exit
-    
-    # Swim maze Floor & Ceiling
-    o2(CG_TOP, Z1_START_X, 35, 100, 1)
-    o2(CG_TOP, Z1_START_X, 15, 100, 1)
-    
-    # Fishbones & Urchins
-    for x in range(Z1_START_X+20, Z1_START_X+80, 10):
-        s1(db.FISHBONE, x*16, 25*16, z=1)
-        # Urchin (102 is commonly urchin, wait, let's use Boos since it's a ghost house)
-        s1(db.BOO, (x+5)*16, 20*16, z=1)
-
-    # Star Coin 2
-    s1(db.STAR_COIN, (Z1_START_X+50)*16, 25*16, b'\x00\x00\x00\x00\x01\x00', 1)
-    
-    # Exit Pipe to Area 3 Secret Goal! (Entrance 5 leads to Area 3 Ent 1)
-    o0(95, Z1_START_X+85, 33, 2, 2)  # Pipe Entry Down
-    o0(94, Z1_START_X+85, 35, 2, 2)
-    area1.entrances.append(Entrance(x=(Z1_START_X+85)*16, y=33*16, entrance_id=5, dest_area=3, dest_entrance=1, etype=2, zone_id=1))
+    END_X = 195
+    a1_obj(db.GrassObjs.GROUND_TOP, END_X-2, 17, 15, 1)
+    a1_obj(db.GrassObjs.GROUND_FILL, END_X-2, 18, 15, 12)
+    a1_spr(276, END_X, 14)
+    area1.entrances.append(Entrance(x=END_X*16, y=16*16, entrance_id=1, dest_area=2, dest_entrance=0, etype=db.ENTRANCE_DOOR, zone_id=0, layer=0, path=0, unk1=0, unk2=0, settings=0, leave_level=0, cp_direction=0))
 
     area1.loaded_sprites = sorted(set(s.stype for s in area1.sprites))
     arc.set_file('course/course1.bin', serialize_course_bin(area1))
@@ -6557,41 +6496,52 @@ def create_level_4_ghost_house():
     arc.set_file('course/course1_bgdatL2.bin', serialize_layer_data(area1.layer2))
 
     # ════════════════════════════════════════════════════
-    #   AREA 2: Haunted Atrium
+    #   AREA 2 — The Haunted Atrium (Vertical) + Secret
     # ════════════════════════════════════════════════════
     area2 = parse_course_bin(arc.get_file('course/course2.bin'))
-    clear_area(area2, db.TILESET_STANDARD, db.TILESET_GHOST_HOUSE, db.TILESET_UNDERGROUND)
-    area2.settings.time_limit = 500
-    
-    area2.zones.append(Zone(x=256, y=0, w=1000, h=2500, zone_id=0, music=db.MUSIC_GHOST_HOUSE, cam_mode=3, visibility=36))
-    area2.boundings.append(Bounding(upper=0, lower=0, upper2=0, lower2=0, bound_id=0, mp_cam_zoom=10))
+    area2.sprites.clear(); area2.layer0.clear(); area2.layer1.clear(); area2.layer2.clear()
+    area2.entrances.clear(); area2.zones.clear(); area2.boundings.clear()
+    area2.tileset = Tileset(slot0=db.TILESET_STANDARD, slot1=db.TILESET_GHOST_HOUSE, slot2=db.TILESET_GRASS, slot3='')
+    area2.zones.append(Zone(x=256, y=0, w=640, h=3000, zone_id=0, music=db.MUSIC_GHOST_HOUSE, cam_mode=3, cam_zoom=0, visibility=36))
+    area2.boundings.append(Bounding(upper=0, lower=0, upper2=0, lower2=0, bound_id=0, mp_cam_zoom=15, upper3=0, lower3=0))
 
-    def o2_a2(ot, x, y, w=1, h=1): area2.layer1.append(LayerObject(tileset=2, obj_type=ot, x=x, y=y, w=w, h=h))
-    def s2(stype, x, y, data=b'\x00'*6): area2.sprites.append(Sprite(stype=stype, x=x, y=y, spritedata=data, zone_id=0, extra_byte=0))
+    def a2_spr(stype, x, y, data=b'\x00'*6):
+        area2.sprites.append(Sprite(stype=stype, x=x*16, y=y*16, spritedata=data, zone_id=0, extra_byte=0))
+    def a2_obj(ot, x, y, w=1, h=1):
+        area2.layer1.append(LayerObject(tileset=2, obj_type=ot, x=x, y=y, w=w, h=h))
 
-    A2X = 16
-    A2BOT = 140
-    A2TOP = 20
+    BOT_Y = 175
+    a2_obj(db.GrassObjs.GROUND_TOP, 16, BOT_Y, 22, 1)
+    a2_obj(db.GrassObjs.GROUND_FILL, 16, BOT_Y+1, 22, 3)
+    area2.entrances.append(Entrance(x=26*16, y=(BOT_Y-1)*16, entrance_id=0, dest_area=1, dest_entrance=1, etype=db.ENTRANCE_DOOR, zone_id=0, layer=0, path=0, unk1=0, unk2=0, settings=0, leave_level=0, cp_direction=0))
+    a2_spr(276, 26, BOT_Y-3)
 
-    # Entry Door from Area 1
-    area2.entrances.append(Entrance(x=(A2X+10)*16, y=(A2BOT-1)*16, entrance_id=0, dest_area=1, dest_entrance=2, etype=6, zone_id=0))
-    s2(276, (A2X+10)*16, (A2BOT-1)*16)
-    
-    o2_a2(CG_TOP, A2X, A2BOT, 20, 1)
+    a2_obj(db.GrassObjs.GROUND_TOP, 20, BOT_Y-4, 4, 1);  a2_spr(db.BOO, 32, BOT_Y-6)
+    a2_obj(db.GrassObjs.GROUND_TOP, 28, BOT_Y-8, 3, 1)
+    a2_obj(db.GrassObjs.GROUND_TOP, 24, BOT_Y-12, 4, 1); a2_spr(db.BOO, 22, BOT_Y-14)
+    a2_obj(db.GrassObjs.GROUND_TOP, 16, BOT_Y-16, 5, 1)
+    a2_obj(db.GrassObjs.GROUND_TOP, 22, BOT_Y-20, 4, 1); a2_spr(db.BOO, 28, BOT_Y-22)
+    a2_obj(db.GrassObjs.GROUND_TOP, 30, BOT_Y-24, 3, 1)
+    a2_obj(db.GrassObjs.GROUND_TOP, 26, BOT_Y-28, 4, 1); a2_spr(db.BIG_BOO, 18, BOT_Y-30)
 
-    # Vertical platforms & Boos
-    for y in range(A2BOT-15, A2TOP+10, -15):
-        o2_a2(CG_TOP, A2X+4, y, 12, 1)
-        s2(db.BOO, (A2X+8)*16, (y-5)*16)
-        s2(db.BOO, (A2X+12)*16, (y-8)*16)
+    # Secret exit side ledge
+    a2_obj(db.GrassObjs.GROUND_TOP, 34, BOT_Y-28, 12, 1)
+    a2_obj(db.GrassObjs.GROUND_FILL, 34, BOT_Y-27, 12, 5)
+    area2.layer1.append(LayerObject(tileset=0, obj_type=db.StandardObjs.PIPE_ENTRY, x=42, y=BOT_Y-30, w=2, h=2))
+    area2.layer1.append(LayerObject(tileset=0, obj_type=db.StandardObjs.PIPE_BODY,  x=42, y=BOT_Y-28, w=2, h=2))
+    area2.entrances.append(Entrance(x=42*16+8, y=(BOT_Y-30)*16, entrance_id=2, dest_area=3, dest_entrance=0, etype=db.ENTRANCE_PIPE_UP, zone_id=0, layer=0, path=0, unk1=0, unk2=0, settings=0, leave_level=0, cp_direction=0))
 
-    # Star Coin 3
-    s2(db.STAR_COIN, (A2X+10)*16, (A2TOP+15)*16, b'\x00\x00\x00\x00\x02\x00')
+    a2_obj(db.GrassObjs.GROUND_TOP, 20, BOT_Y-32, 6, 1)
+    a2_obj(db.GrassObjs.GROUND_TOP, 16, BOT_Y-37, 6, 1)
+    a2_obj(db.GrassObjs.GROUND_TOP, 24, BOT_Y-42, 6, 1); a2_spr(db.BOO, 30, BOT_Y-44)
+    a2_obj(db.GrassObjs.GROUND_TOP, 16, BOT_Y-47, 6, 1)
+    a2_obj(db.GrassObjs.GROUND_TOP, 24, BOT_Y-52, 4, 1)
 
-    # Exit Door to Area 3 Normal Goal
-    o2_a2(CG_TOP, A2X+8, A2TOP, 4, 1)
-    s2(276, (A2X+9)*16, A2TOP*16)
-    area2.entrances.append(Entrance(x=(A2X+9)*16, y=(A2TOP-2)*16, entrance_id=1, dest_area=3, dest_entrance=0, etype=6, zone_id=0))
+    TOP_Y = BOT_Y - 57
+    a2_obj(db.GrassObjs.GROUND_TOP, 14, TOP_Y, 8, 1)
+    a2_obj(db.GrassObjs.GROUND_FILL, 14, TOP_Y+1, 8, 8)
+    a2_spr(276, 16, TOP_Y-3)
+    area2.entrances.append(Entrance(x=16*16, y=(TOP_Y-1)*16, entrance_id=1, dest_area=4, dest_entrance=0, etype=db.ENTRANCE_DOOR, zone_id=0, layer=0, path=0, unk1=0, unk2=0, settings=0, leave_level=0, cp_direction=0))
 
     area2.loaded_sprites = sorted(set(s.stype for s in area2.sprites))
     arc.set_file('course/course2.bin', serialize_course_bin(area2))
@@ -6600,39 +6550,34 @@ def create_level_4_ghost_house():
     arc.set_file('course/course2_bgdatL2.bin', serialize_layer_data(area2.layer2))
 
     # ════════════════════════════════════════════════════
-    #   AREA 3: The Outskirts (Goal Poles)
+    #   AREA 3 — Secret Basement (underwater)
     # ════════════════════════════════════════════════════
     area3 = parse_course_bin(arc.get_file('course/course3.bin'))
-    clear_area(area3, db.TILESET_STANDARD, db.TILESET_GRASS, db.TILESET_UNDERGROUND)
-    area3.settings.time_limit = 500
-    
-    area3.zones.append(Zone(x=256, y=256, w=4000, h=400, zone_id=0, music=db.MUSIC_GHOST_HOUSE, cam_mode=0, visibility=36))
-    area3.boundings.append(Bounding(upper=0, lower=0, upper2=0, lower2=0, bound_id=0, mp_cam_zoom=10))
+    area3.sprites.clear(); area3.layer0.clear(); area3.layer1.clear(); area3.layer2.clear()
+    area3.entrances.clear(); area3.zones.clear(); area3.boundings.clear()
+    area3.tileset = Tileset(slot0=db.TILESET_STANDARD, slot1=db.TILESET_GHOST_HOUSE, slot2=db.TILESET_GRASS, slot3='')
+    area3.zones.append(Zone(x=256, y=256, w=1200, h=368, zone_id=0, music=db.MUSIC_GHOST_HOUSE, cam_mode=0, cam_zoom=0, visibility=36))
+    area3.boundings.append(Bounding(upper=0, lower=0, upper2=0, lower2=0, bound_id=0, mp_cam_zoom=15, upper3=0, lower3=0))
 
-    def o1_a3(ot, x, y, w=1, h=1): area3.layer1.append(LayerObject(tileset=1, obj_type=ot, x=x, y=y, w=w, h=h))
-    def s3(stype, x, y, data=b'\x00'*6): area3.sprites.append(Sprite(stype=stype, x=x, y=y, spritedata=data, zone_id=0, extra_byte=0))
+    def a3_spr(stype, x, y, data=b'\x00'*6):
+        area3.sprites.append(Sprite(stype=stype, x=x*16, y=y*16, spritedata=data, zone_id=0, extra_byte=0))
+    def a3_obj(ot, x, y, w=1, h=1):
+        area3.layer1.append(LayerObject(tileset=2, obj_type=ot, x=x, y=y, w=w, h=h))
 
-    A3X = 16
-    A3Y = 35
-
-    # Ground
-    o1_a3(19, A3X, A3Y, 150, 1) # Grass top
-    o1_a3(23, A3X, A3Y+1, 150, 5) # Fill
-    
-    # Ent 0: Normal Door from Area 2
-    s3(276, (A3X+5)*16, A3Y*16)
-    area3.entrances.append(Entrance(x=(A3X+5)*16, y=(A3Y-3)*16, entrance_id=0, dest_area=2, dest_entrance=1, etype=6, zone_id=0))
-
-    # Normal Goal Pole
-    s3(db.GOAL_POLE, (A3X+50)*16, (A3Y-10)*16)
-
-    # Ent 1: Secret Pipe from Area 1 Zone 1
-    area3.entrances.append(Entrance(x=(A3X+80)*16, y=(A3Y-4)*16, entrance_id=1, dest_area=1, dest_entrance=5, etype=3, zone_id=0))
-    o1_a3(95, A3X+80, A3Y-4, 2, 2)
-    o1_a3(94, A3X+80, A3Y-2, 2, 2)
-
-    # Secret Goal Pole
-    s3(db.SECRET_GOAL_POLE, (A3X+120)*16, (A3Y-10)*16)
+    GY = 28
+    a3_spr(db.WATER_FILL, 0, 0, b'\x00\x00\x00\x00\x00\x00')
+    a3_obj(db.GrassObjs.GROUND_TOP, 16, GY, 40, 1)
+    a3_obj(db.GrassObjs.GROUND_FILL, 16, GY+1, 40, 3)
+    area3.entrances.append(Entrance(x=20*16+8, y=(GY-11)*16, entrance_id=0, dest_area=2, dest_entrance=2, etype=db.ENTRANCE_PIPE_DOWN, zone_id=0, layer=0, path=0, unk1=0, unk2=0, settings=0, leave_level=0, cp_direction=0))
+    area3.layer1.append(LayerObject(tileset=0, obj_type=db.StandardObjs.PIPE_BODY,  x=20, y=GY-15, w=2, h=4))
+    area3.layer1.append(LayerObject(tileset=0, obj_type=db.StandardObjs.PIPE_ENTRY, x=20, y=GY-11, w=2, h=2))
+    a3_spr(db.FISHBONE, 30, GY-5)
+    a3_spr(db.FISHBONE, 40, GY-3)
+    a3_spr(db.URCHIN, 35, GY-6)
+    a3_spr(db.URCHIN, 45, GY-4)
+    area3.entrances.append(Entrance(x=50*16+8, y=(GY-2)*16, entrance_id=1, dest_area=4, dest_entrance=1, etype=db.ENTRANCE_PIPE_UP, zone_id=0, layer=0, path=0, unk1=0, unk2=0, settings=0, leave_level=0, cp_direction=0))
+    area3.layer1.append(LayerObject(tileset=0, obj_type=db.StandardObjs.PIPE_ENTRY, x=50, y=GY-2, w=2, h=2))
+    area3.layer1.append(LayerObject(tileset=0, obj_type=db.StandardObjs.PIPE_BODY,  x=50, y=GY,   w=2, h=2))
 
     area3.loaded_sprites = sorted(set(s.stype for s in area3.sprites))
     arc.set_file('course/course3.bin', serialize_course_bin(area3))
@@ -6640,11 +6585,42 @@ def create_level_4_ghost_house():
     arc.set_file('course/course3_bgdatL1.bin', serialize_layer_data(area3.layer1))
     arc.set_file('course/course3_bgdatL2.bin', serialize_layer_data(area3.layer2))
 
-    # Save
+    # ════════════════════════════════════════════════════
+    #   AREA 4 — The Outskirts (Normal + Secret Exit)
+    # ════════════════════════════════════════════════════
+    area4 = parse_course_bin(arc.get_file('course/course4.bin'))
+    area4.sprites.clear(); area4.layer0.clear(); area4.layer1.clear(); area4.layer2.clear()
+    area4.entrances.clear(); area4.zones.clear(); area4.boundings.clear()
+    area4.tileset = Tileset(slot0=db.TILESET_STANDARD, slot1=db.TILESET_GHOST_HOUSE, slot2=db.TILESET_GRASS, slot3='')
+    area4.zones.append(Zone(x=256, y=256, w=4000, h=368, zone_id=0, music=db.MUSIC_GHOST_HOUSE, cam_mode=0, cam_zoom=0, visibility=36))
+    area4.boundings.append(Bounding(upper=0, lower=0, upper2=0, lower2=0, bound_id=0, mp_cam_zoom=15, upper3=0, lower3=0))
+
+    def a4_spr(stype, x, y, data=b'\x00'*6):
+        area4.sprites.append(Sprite(stype=stype, x=x*16, y=y*16, spritedata=data, zone_id=0, extra_byte=0))
+    def a4_obj(ot, x, y, w=1, h=1):
+        area4.layer1.append(LayerObject(tileset=2, obj_type=ot, x=x, y=y, w=w, h=h))
+
+    GY = 28
+    a4_obj(db.GrassObjs.GROUND_TOP, 16, GY, 60, 1)
+    a4_obj(db.GrassObjs.GROUND_FILL, 16, GY+1, 60, 3)
+    area4.entrances.append(Entrance(x=24*16, y=(GY-1)*16, entrance_id=0, dest_area=2, dest_entrance=1, etype=db.ENTRANCE_DOOR, zone_id=0, layer=0, path=0, unk1=0, unk2=0, settings=0, leave_level=0, cp_direction=0))
+    a4_spr(276, 24, GY-3)
+    a4_spr(db.GOAL_POLE, 35, GY-1)
+    area4.entrances.append(Entrance(x=55*16+8, y=(GY-2)*16, entrance_id=1, dest_area=3, dest_entrance=1, etype=db.ENTRANCE_PIPE_UP, zone_id=0, layer=0, path=0, unk1=0, unk2=0, settings=0, leave_level=0, cp_direction=0))
+    area4.layer1.append(LayerObject(tileset=0, obj_type=db.StandardObjs.PIPE_ENTRY, x=55, y=GY-2, w=2, h=2))
+    area4.layer1.append(LayerObject(tileset=0, obj_type=db.StandardObjs.PIPE_BODY,  x=55, y=GY,   w=2, h=2))
+    a4_spr(db.GOAL_POLE, 65, GY-1, b'\x00\x00\x00\x01\x00\x00')
+
+    area4.loaded_sprites = sorted(set(s.stype for s in area4.sprites))
+    arc.set_file('course/course4.bin', serialize_course_bin(area4))
+    arc.set_file('course/course4_bgdatL0.bin', serialize_layer_data(area4.layer0))
+    arc.set_file('course/course4_bgdatL1.bin', serialize_layer_data(area4.layer1))
+    arc.set_file('course/course4_bgdatL2.bin', serialize_layer_data(area4.layer2))
+
+    os.makedirs('output/ChaosStation/Stage', exist_ok=True)
     with open('output/ChaosStation/Stage/04-21.arc', 'wb') as f:
         f.write(arc.pack())
-        
-    print("Created 4-GH: Haunted Reef")
+    print("Created 4-GH: Haunted Reef (04-21.arc)")
 
 
 def create_level_4_cannon():
@@ -6730,6 +6706,11 @@ def create_level_4_cannon():
         dest_area=0, dest_entrance=0, etype=db.ENTRANCE_NORMAL, zone_id=0,
         layer=0, path=0, unk1=0, unk2=0, settings=0, leave_level=0, cp_direction=0
     ))
+    area.entrances.append(Entrance(
+        x=(TX + 56) * 16, y=(GY - 1) * 16, entrance_id=1,
+        dest_area=0, dest_entrance=0, etype=db.ENTRANCE_NORMAL, zone_id=0,
+        layer=0, path=0, unk1=0, unk2=0, settings=0, leave_level=0, cp_direction=0
+    ))  # Midway respawn
 
     # Section 1: Intro runway
     add_ground(TX, GY, 12, 7)
@@ -6767,7 +6748,7 @@ def create_level_4_cannon():
     spr(db.BULLET_BILL_LAUNCHER, (TX + 82) * 16, (GY - 4) * 16)
 
     # Star Coin 2
-    spr(db.STAR_COIN, (TX + 73) * 16, (GY - 11) * 16, b'\x00\x00\x00\x00\x01\x00')
+    spr(db.STAR_COIN, (TX + 73) * 16, (GY - 11) * 16, b'\x00\x00\x00\x01\x00\x00')
 
     # Section 5: Summit and warp cannon
     add_ground(TX + 88, GY, 20, 7)
@@ -6776,7 +6757,7 @@ def create_level_4_cannon():
     spr(db.FIRE_BRO, (TX + 99) * 16, (GY - 8) * 16)
 
     # Star Coin 3
-    spr(db.STAR_COIN, (TX + 92) * 16, (GY - 10) * 16, b'\x00\x00\x00\x00\x02\x00')
+    spr(db.STAR_COIN, (TX + 92) * 16, (GY - 10) * 16, b'\x00\x00\x00\x02\x00\x00')
 
     # 434 = Warp Cannon. Byte 5 = 1 routes to World 6.
     spr(434, (TX + 101) * 16, (GY - 8) * 16, b'\x00\x00\x00\x00\x00\x01')
@@ -7201,315 +7182,431 @@ def create_level_4_ambush():
     print("Modified World 4 Ambushes: Ocean Onslaught")
 
 
-
-
 def create_level_5_1():
+    """5-1: Canopy Crossing — treetop jungle with Wiggler crossing and Bramball gauntlet.
+    Handcrafted 3-section layout with real geometry variation and difficulty ramp.
+    """
     from tools.level_builder import LevelBuilder
     import tools.sprite_db as db
+
     builder = LevelBuilder()
-    a1 = builder.add_area(1)
-    a1.set_tileset(1, db.TILESET_FOREST)
-    a1.set_background(bg2=db.BG_FOREST)
-    a1.set_time(400)
-    a1.add_zone(0, 0, 480, 3500, zone_id=0, music=db.MUSIC_FOREST, cam_mode=3, visibility=16)
-    a1.add_sprite(db.POISON_FILL, 0, 3450, spritedata=b"\x01\x00\x00\x00\x00\x00")
-    a1.add_ground(14, 210, 10, 8, tileset=1)
-    a1.add_entrance(0, 18*16, 208*16, etype=db.ENTRANCE_NORMAL)
-    a1.add_sprite(10, 18*16, 208*16)
-    a1.add_sprite(db.PROPELLER_BLOCK, 18*16, 206*16)
-    for gx,gy,gw in [(4,197,7),(20,193,6),(28,189,5),(6,185,7),(22,181,6),(30,177,5),(8,173,6),(24,169,7),(6,165,5),(28,161,5),(10,157,6),(24,153,7)]:
-        a1.add_ground(gx, gy, gw, 2, tileset=1)
-    for s,x,y in [(db.GOOMBA,6,196),(db.THWOMP,22,188),(db.BUZZY_BEETLE,30,188),(db.CHAIN_CHOMP,8,184),(db.KOOPA,24,180),(db.THWOMP,32,172),(db.PIRANHA_PLANT,10,172),(db.SLEDGE_BRO,26,168),(db.CROWBER,16,160),(db.BRAMBALL,30,160),(db.THWOMP,12,152),(db.GOOMBA,26,152)]:
-        a1.add_sprite(s, x*16, y*16)
-    a1.add_sprite(db.STAR_COIN, 24*16, 183*16, spritedata=bytes([0,0,0,0,0,0]))
-    for i,my in enumerate([148,143,138,133,128,123,118,113]):
-        a1.add_sprite(228, (6+(i%3)*10)*16, my*16)
-    a1.add_ground(22, 145, 6, 2, tileset=1)
-    for s,x,y in [(db.SLEDGE_BRO,24,144),(db.CROWBER,16,138),(db.CROWBER,10,128),(db.CROWBER,20,118),(db.THWOMP,14,125)]:
-        a1.add_sprite(s, x*16, y*16)
-    a1.add_ground(6, 122, 6, 2, tileset=1)
-    a1.add_sprite(db.PARAGOOMBA, 18*16, 115*16)
-    a1.add_ground(24, 110, 6, 2, tileset=1)
-    a1.add_sprite(db.KOOPA, 26*16, 109*16)
-    a1.add_ground(12, 103, 6, 2, tileset=1)
-    a1.add_sprite(db.MIDWAY_FLAG, 14*16, 102*16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-    a1.add_sprite(db.STAR_COIN, 15*16, 130*16, spritedata=bytes([0,0,0,0,1,0]))
-    for gx,gy,gw in [(6,98,8),(22,93,7),(8,88,6),(24,84,7),(6,80,5),(20,76,7),(8,72,6),(24,68,7),(6,64,6),(22,60,8)]:
-        a1.add_ground(gx, gy, gw, 2, tileset=1)
-    for s,x,y in [(db.BRAMBALL,9,97),(db.CHAIN_CHOMP,24,92),(db.THWOMP,10,83),(db.FIRE_BRO,26,83),(db.BRAMBALL,8,79),(db.SLEDGE_BRO,22,75),(db.CROWBER,14,72),(db.CHAIN_CHOMP,10,71),(db.THWOMP,26,63),(db.HAMMER_BRO,8,63),(db.BRAMBALL,24,59),(db.PARAGOOMBA,16,58)]:
-        a1.add_sprite(s, x*16, y*16)
-    a1.add_sprite(db.STAR_COIN, 12*16, 78*16, spritedata=bytes([0,0,0,0,2,0]))
-    a1.add_ground(10, 55, 12, 8, tileset=1)
-    a1.add_pipe(14, 53, height=2, tileset=0)
-    a1.add_entrance(1, x=14*16+16, y=53*16, etype=2, zone_id=0, dest_area=2, dest_entrance=2)
-    a2 = builder.add_area(2)
-    a2.set_tileset(1, db.TILESET_FOREST)
-    a2.set_background(bg2=db.BG_FOREST)
-    a2.set_time(300)
-    a2.add_zone(0, 0, 7000, 640, zone_id=0, music=db.MUSIC_FOREST, cam_mode=0, visibility=16)
-    GY = 28
-    a2.add_ground(0, GY, 10, 4, tileset=1)
-    a2.add_entrance(2, 3*16, (GY-2)*16, etype=0)
-    a2.add_entrance(1, 92*16, (GY-1)*16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-    a2.add_ground(12, GY, 300, 4, tileset=1)
-    for bx in [18,32,48,62,78]: a2.add_sprite(db.BRAMBALL, bx*16, (GY-1)*16)
-    a2.add_sprite(db.PIRANHA_PLANT, 25*16, (GY-1)*16)
-    a2.add_sprite(db.PIRANHA_PLANT, 55*16, (GY-1)*16)
-    a2.add_ground(40, GY-5, 6, 2, tileset=1)
-    a2.add_sprite(db.HAMMER_BRO, 42*16, (GY-6)*16)
-    for tx in [95,110,125,140,155]: a2.add_sprite(db.THWOMP, tx*16, (GY-8)*16)
-    a2.add_sprite(db.CHAIN_CHOMP, 115*16, (GY-1)*16)
-    a2.add_sprite(db.CHAIN_CHOMP, 145*16, (GY-1)*16)
-    a2.add_sprite(db.MIDWAY_FLAG, 92*16, (GY-1)*16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-    for s,x in [(db.SLEDGE_BRO,175),(db.FIRE_BRO,195),(db.HAMMER_BRO,215),(db.SLEDGE_BRO,235)]: a2.add_sprite(s, x*16, (GY-1)*16)
-    a2.add_sprite(db.PIRANHA_PLANT, 185*16, (GY-1)*16)
-    a2.add_sprite(db.PIRANHA_PLANT, 225*16, (GY-1)*16)
-    a2.add_sprite(db.BANZAI_BILL_LAUNCHER, 200*16, (GY-4)*16)
-    a2.add_sprite(db.BANZAI_BILL_LAUNCHER, 240*16, (GY-4)*16)
-    a2.add_ground(265, GY, 14, 4, tileset=1)
-    a2.add_sprite(db.GOAL_POLE, 274*16, (GY-1)*16)
-    builder.save("output/ChaosStation/Stage/05-01.arc")
-    print("Created 5-1: Canopy Ascent")
+    a = builder.add_area(1)
+    a.set_tileset(1, db.TILESET_FOREST)
+    a.set_background(bg2=db.BG_FOREST)
+    a.set_time(500)
+    a.add_zone(0, 0, 8000, 640, zone_id=0, music=db.MUSIC_FOREST, cam_mode=0)
+
+    # ── Safe spawn platform ──
+    a.add_ground(0, 20, 14, 8, tileset=1)
+    a.add_entrance(0, 3 * 16, 18 * 16, etype=db.ENTRANCE_NORMAL)
+    a.add_entrance(1, 158 * 16, 19 * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
+    a.add_sprite(10, 3 * 16, 18 * 16)  # Mario start sprite
+
+    # ══ SECTION A: Stalking Piranha staircase (X 15–80) ══
+    # 5 staggered ledge pairs; Stalking Piranhas on alternate ones
+    ledge_heights = [20, 18, 21, 17, 19, 20, 18, 22]
+    for i, h in enumerate(ledge_heights):
+        lx = 15 + i * 9
+        a.add_ground(lx, h, 7, 4, tileset=1)
+        if i % 2 == 0:
+            a.add_sprite(db.PIRANHA_PLANT, (lx + 3) * 16, (h - 1) * 16)
+        if i == 3:
+            # Star Coin 1 — atop a floating island above section A
+            a.add_ground(lx + 2, h - 5, 4, 2, tileset=1)
+            a.add_sprite(db.STAR_COIN, (lx + 3) * 16, (h - 6) * 16, spritedata=bytes([0,0,0,0,0,0]))
+    # Goombas patrolling the ledges
+    for gx in [20, 35, 55, 70]:
+        a.add_sprite(db.GOOMBA, gx * 16, 18 * 16)
+
+    # ══ SECTION B: Giant Wiggler crossing over poison gap (X 82–160) ══
+    a.add_sprite(db.POISON_FILL, 82 * 16, 27 * 16, spritedata=b'\x01\x00\x00\x00\x00\x00')
+    # Landing dock on each side of the gap
+    a.add_ground(80, 20, 6, 8, tileset=1)
+    a.add_ground(155, 20, 8, 8, tileset=1)
+    # Giant Wiggler rides across the gap as a platform
+    a.add_sprite(db.GIANT_WIGGLER, 100 * 16, 22 * 16)
+    a.add_sprite(db.GIANT_WIGGLER, 125 * 16, 22 * 16)
+    # Star Coin 2 — floating mid-gap, reachable from wiggler's back
+    a.add_sprite(db.STAR_COIN, 120 * 16, 18 * 16, spritedata=bytes([0,0,0,0,0,1]))
+    # Crowbers dive-bomb the crossing
+    for cx in [95, 112, 138]:
+        a.add_sprite(db.CROWBER, cx * 16, 12 * 16)
+
+    # Midway flag on the far dock
+    a.add_sprite(db.MIDWAY_FLAG, 158 * 16, 19 * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
+
+    # ══ SECTION C: Bramball gauntlet — narrow platforms, rolling hazards (X 165–340) ══
+    # Narrow platforms over poison, Bramballs rolling left and right
+    bramball_platforms = [
+        # (x, y, width) — deliberately varied so no two feel identical
+        (165, 19, 9),
+        (178, 22, 6),
+        (188, 18, 8),
+        (200, 21, 5),
+        (210, 19, 10),
+        (224, 22, 7),
+        (235, 18, 6),
+        (246, 20, 9),
+        (260, 22, 5),
+        (270, 19, 8),
+        (282, 21, 6),
+        (293, 18, 10),
+        (308, 20, 7),
+        (320, 22, 5),
+    ]
+    a.add_sprite(db.POISON_FILL, 163 * 16, 27 * 16, spritedata=b'\x01\x00\x00\x00\x00\x00')
+    for i, (px, py, pw) in enumerate(bramball_platforms):
+        a.add_ground(px, py, pw, 4, tileset=1)
+        # Place Bramball on every other platform — rolls between adjacent platforms
+        if i % 2 == 1:
+            a.add_sprite(db.BRAMBALL, (px + 2) * 16, (py - 1) * 16)
+        # Occasional Goomba for added pressure
+        if i % 3 == 0:
+            a.add_sprite(db.GOOMBA, (px + 1) * 16, (py - 1) * 16)
+
+    # Star Coin 3 — hidden behind a Bramball cluster near end
+    a.add_sprite(db.STAR_COIN, 310 * 16, 17 * 16, spritedata=bytes([0,0,0,0,0,2]))
+
+    # ── End platform and Goal Pole ──
+    a.add_ground(332, 20, 14, 8, tileset=1)
+    a.add_sprite(db.GOAL_POLE, 340 * 16, 19 * 16)
+
+    builder.save('output/ChaosStation/Stage/05-01.arc')
+    print('Created 5-1: Canopy Crossing')
 
 
 def create_level_5_2():
+    """5-2: Poison Surge — low swamp docks separated by poison rivers.
+    Dock-hopping, Donut Blocks over poison, Chain Chomp timing.
+    """
     from tools.level_builder import LevelBuilder
     import tools.sprite_db as db
+
     builder = LevelBuilder()
     a = builder.add_area(1)
     a.set_tileset(1, db.TILESET_FOREST)
     a.set_background(bg2=db.BG_FOREST)
     a.set_time(500)
     a.add_zone(0, 0, 9000, 640, zone_id=0, music=db.MUSIC_FOREST, cam_mode=0)
-    a.add_sprite(db.POISON_FILL, 0, 27*16, spritedata=b"\x01\x00\x00\x00\x00\x00")
+
+    a.add_sprite(db.POISON_FILL, 0, 27 * 16, spritedata=b'\x01\x00\x00\x00\x00\x00')
+
+    # ── DOCK 1 ──
     a.add_ground(0, 21, 62, 8, tileset=1)
-    a.add_entrance(0, 3*16, 19*16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 113*16, 20*16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-    a.add_sprite(10, 3*16, 19*16)
-    a.add_question_block(8, 18, contents=7)
-    for px in [18,30,45]: a.add_sprite(db.PIPE_PIRANHA_UP, px*16, 19*16)
-    a.add_sprite(db.GOOMBA, 10*16, 20*16)
-    a.add_sprite(db.GOOMBA, 52*16, 20*16)
-    for dx in [65,71,77,83,89,95,101,107]: a.add_sprite(db.FALLING_PLATFORM, dx*16, 20*16)
-    for cx in [68,80,92,104]: a.add_sprite(db.CHEEP_CHEEP, cx*16, 25*16)
+    a.add_entrance(0, 3 * 16, 19 * 16, etype=db.ENTRANCE_NORMAL)
+    a.add_entrance(1, 113 * 16, 20 * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)
+    a.add_sprite(10, 3 * 16, 19 * 16)
+    a.add_question_block(8, 18, contents=7)  # Yoshi egg
+    for px in [18, 30, 45]:
+        a.add_sprite(db.PIPE_PIRANHA_UP, px * 16, 19 * 16)
+    a.add_sprite(db.GOOMBA, 10 * 16, 20 * 16)
+    a.add_sprite(db.GOOMBA, 52 * 16, 20 * 16)
+
+    # ── RIVER 1: Donut blocks + Cheep Cheeps ──
+    for dx in [65, 71, 77, 83, 89, 95, 101, 107]:
+        a.add_sprite(db.FALLING_PLATFORM, dx * 16, 20 * 16)
+    for cx in [68, 80, 92, 104]:
+        a.add_sprite(db.CHEEP_CHEEP, cx * 16, 25 * 16)
     a.add_ground(84, 12, 4, 2, tileset=1)
-    a.add_sprite(db.STAR_COIN, 85*16, 11*16, spritedata=bytes([0,0,0,0,0,0]))
+    a.add_sprite(db.STAR_COIN, 85 * 16, 11 * 16, spritedata=bytes([0, 0, 0, 0, 0, 0]))
+
+    # ── DOCK 2: Fire Bros + Star Coin shelf ──
     a.add_ground(111, 21, 65, 8, tileset=1)
-    a.add_sprite(db.FIRE_BRO, 125*16, 20*16)
-    a.add_sprite(db.FIRE_BRO, 145*16, 20*16)
-    a.add_sprite(db.HAMMER_BRO, 160*16, 20*16)
+    a.add_sprite(db.FIRE_BRO, 125 * 16, 20 * 16)
+    a.add_sprite(db.FIRE_BRO, 145 * 16, 20 * 16)
+    a.add_sprite(db.HAMMER_BRO, 160 * 16, 20 * 16)
     a.add_ground(130, 14, 10, 3, tileset=1)
-    a.add_sprite(db.STAR_COIN, 134*16, 13*16, spritedata=bytes([0,0,0,0,1,0]))
-    a.add_sprite(db.MIDWAY_FLAG, 113*16, 20*16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-    for rx,ry in [(180,20),(196,17),(212,21),(222,18),(230,19)]: a.add_sprite(db.BASIC_PLATFORM, rx*16, ry*16)
-    for bx in [183,200,218]: a.add_sprite(db.BLOOPER, bx*16, 25*16)
+    a.add_sprite(db.STAR_COIN, 134 * 16, 13 * 16, spritedata=bytes([0, 0, 0, 0, 1, 0]))
+    a.add_sprite(db.MIDWAY_FLAG, 113 * 16, 20 * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
+
+    # ── RIVER 2: 5 moving platforms + Bloopers ──
+    for rx, ry in [(180, 20), (196, 17), (212, 21), (222, 18), (230, 19)]:
+        a.add_sprite(db.BASIC_PLATFORM, rx * 16, ry * 16)
+    for bx in [183, 200, 218]:
+        a.add_sprite(db.BLOOPER, bx * 16, 25 * 16)
+
+    # ── DOCK 3: Chain Chomps + Star Coin 3 ──
     a.add_ground(238, 21, 75, 8, tileset=1)
-    for chx in [248,275,300]: a.add_sprite(db.CHAIN_CHOMP, chx*16, 20*16)
-    a.add_sprite(db.STAR_COIN, 285*16, 17*16, spritedata=bytes([0,0,0,0,2,0]))
-    for dx in [318,325,332,339,346,353,360]: a.add_sprite(db.FALLING_PLATFORM, dx*16, 20*16)
-    for cx in [322,340,358]: a.add_sprite(db.CHEEP_CHEEP, cx*16, 25*16)
-    a.add_ground(368, 21, 55, 8, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 380*16, 20*16)
-    a.add_sprite(db.SLEDGE_BRO, 400*16, 20*16)
-    a.add_sprite(db.HAMMER_BRO, 415*16, 20*16)
-    a.add_sprite(db.GOAL_POLE, 418*16, 20*16)
-    builder.save("output/ChaosStation/Stage/05-02.arc")
-    print("Created 5-2: Poison Surge")
+    for chx in [248, 275, 300]:
+        a.add_sprite(db.CHAIN_CHOMP, chx * 16, 20 * 16)
+    a.add_sprite(db.STAR_COIN, 285 * 16, 17 * 16, spritedata=bytes([0, 0, 0, 0, 2, 0]))
+
+    # ── RIVER 3: Donut blocks + Cheep Cheeps ──
+    for dx in [318, 325, 332, 339, 346, 353, 360]:
+        a.add_sprite(db.FALLING_PLATFORM, dx * 16, 20 * 16)
+    for cx in [322, 340, 358]:
+        a.add_sprite(db.CHEEP_CHEEP, cx * 16, 25 * 16)
+
+    # ── DOCK 4: Sledge Bros gauntlet + Goal Pole ──
+    # Width=70 gives ~32 tiles past the pole for the victory walk-off animation.
+    a.add_ground(368, 21, 70, 8, tileset=1)
+    a.add_sprite(db.SLEDGE_BRO, 380 * 16, 20 * 16)
+    a.add_sprite(db.SLEDGE_BRO, 400 * 16, 20 * 16)
+    a.add_sprite(db.HAMMER_BRO, 415 * 16, 20 * 16)
+    a.add_sprite(db.GOAL_POLE, 418 * 16, 20 * 16)
+
+    builder.save('output/ChaosStation/Stage/05-02.arc')
+    print('Created 5-2: Poison Surge')
 
 
 def create_level_5_3():
+    """5-3: Bramball Factory — underground cave where the floor is thick with Bramballs.
+    Mario must navigate elevated platforms above the chaos. 5 unique traversal zones.
+    """
     from tools.level_builder import LevelBuilder
     import tools.sprite_db as db
+
     builder = LevelBuilder()
     a = builder.add_area(1)
     a.set_tileset(1, db.TILESET_CAVE)
     a.set_background(bg2=db.BG_UNDERGROUND)
     a.set_time(500)
     a.add_zone(0, 0, 7000, 640, zone_id=0, music=db.MUSIC_UNDERGROUND, cam_mode=0)
-    a.add_sprite(db.POISON_FILL, 0, 28*16, spritedata=b"\x01\x00\x00\x00\x00\x00")
+
+    # Poison on the very bottom — nobody wants to fall down here!
+    a.add_sprite(db.POISON_FILL, 0, 28 * 16, spritedata=b'\x01\x00\x00\x00\x00\x00')
+
+    # ── Solid factory floor (Bramballs patrol on top of it) ──
     a.add_ground(0, 25, 400, 4, tileset=1)
-    for bx in [8,16,30,40,55,68,85,100,118,135,152,165,180,200,215,230,248,265,280,295,310,330,348,365,382]:
-        a.add_sprite(db.BRAMBALL, bx*16, 24*16)
+    # Bramballs rolling along the floor — densely packed in groups
+    bramball_xs = [8, 16, 30, 40, 55, 68, 85, 100, 118, 135,
+                   152, 165, 180, 200, 215, 230, 248, 265, 280,
+                   295, 310, 330, 348, 365, 382]
+    for bx in bramball_xs:
+        a.add_sprite(db.BRAMBALL, bx * 16, 24 * 16)
+
+    # ── Safe spawn platform clinging to the left wall ──
     a.add_ground(0, 20, 8, 5, tileset=1)
-    a.add_entrance(0, 2*16, 18*16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 138*16, 14*16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-    a.add_sprite(10, 2*16, 18*16)
-    for zx,zy,zw in [(10,18,8),(22,16,8),(34,19,7),(45,15,9),(57,18,7)]:
+    a.add_entrance(0, 2 * 16, 18 * 16, etype=db.ENTRANCE_NORMAL)
+    a.add_entrance(1, 140 * 16, 14 * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
+    a.add_sprite(10, 2 * 16, 18 * 16)
+
+    # ══ ZONE 1: Simple offset ledges (X 10–60) ══
+    zone1 = [(10,18,8), (22,16,8), (34,19,7), (45,15,9), (57,18,7)]
+    for (zx, zy, zw) in zone1:
         a.add_ground(zx, zy, zw, 2, tileset=1)
         a.add_sprite(db.BUZZY_BEETLE, (zx+2)*16, (zy-1)*16)
+
+    # ══ ZONE 2: ? Block staircase (X 62–110) ══
+    # Question blocks form a rising stair pattern — Bramballs spin below
     for step in range(7):
-        a.add_ground(62+step*7, 22-step, 6, 2, tileset=1)
-    for step in range(7):
-        a.add_sprite(db.COIN, (62+step*7+3)*16, (21-step)*16)
-    a.add_sprite(db.STAR_COIN, 88*16, 23*16, spritedata=bytes([0,0,0,0,0,0]))
-    for mx,my in [(118,18),(128,16),(138,18),(148,15),(158,18)]:
+        qx = 62 + step * 7
+        qy = 22 - step
+        a.add_question_block(qx, qy, contents=1)  # coin inside
+        a.add_question_block(qx+1, qy, contents=1)
+    # Star Coin 1 — floating just above the Bramballs mid Zone 2, requires a precise drop
+    a.add_sprite(db.STAR_COIN, 88 * 16, 23 * 16, spritedata=bytes([0,0,0,0,0,0]))
+
+    # ══ ZONE 3: Moving platforms over a wide Bramball cluster (X 115–165) ══
+    # 3 moving platforms cycling at staggered heights
+    for i, (mx, my) in enumerate([(118,18),(135,15),(152,18)]):
         a.add_sprite(db.BASIC_PLATFORM, mx*16, my*16)
-    a.add_sprite(db.BLOOPER, 125*16, 24*16)
-    a.add_sprite(db.BLOOPER, 145*16, 24*16)
-    a.add_sprite(db.MIDWAY_FLAG, 138*16, 14*16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-    a.add_ground(160, 22, 14, 1, tileset=1)
-    a.add_sprite(db.STAR_COIN, 166*16, 24*16, spritedata=bytes([0,0,0,0,1,0]))
-    a.add_sprite(db.BRAMBALL, 162*16, 24*16)
-    for wx in range(175, 220):
+    # Midway flag reachable from the middle moving platform
+    a.add_sprite(db.MIDWAY_FLAG, 140 * 16, 14 * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
+    # Side alcove for Star Coin 2 — low ceiling forces a careful crouch-approach.
+    # The alcove is carved into the RIGHT cave wall: ceiling at Y=22, opens at Y=23,
+    # with the main floor at Y=25 continuing below (not sealing the alcove).
+    a.add_ground(160, 22, 14, 1, tileset=1)  # Low ceiling of alcove
+    # Floor of alcove = main factory floor at Y=25, no extra tile needed
+    a.add_sprite(db.STAR_COIN, 166 * 16, 24 * 16, spritedata=bytes([0,0,0,0,0,1]))
+    a.add_sprite(db.BRAMBALL, 162 * 16, 24 * 16)  # guard inside alcove
+
+    # ══ ZONE 4: 1-tile-wide walkway (X 175–220) ══
+    # The walkway is elevated only 1 tile over Bramballs — extreme precision required
+    for wx in range(175, 220, 1):
         a.add_ground(wx, 22, 1, 1, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 195*16, 21*16)
-    a.add_sprite(db.HAMMER_BRO, 210*16, 21*16)
-    a.add_sprite(db.POISON_FILL, 225*16, 28*16, spritedata=b"\x01\x00\x00\x00\x00\x00")
-    a.add_sprite(42, 230*16, 18*16)
-    for rx,ry,rw in [(238,22,3),(248,20,3),(258,22,3),(268,19,3),(278,21,3),(288,20,3)]:
-        for bx in range(rx, rx+rw):
-            a.add_object(1, 0, 155, bx, ry, 1, 1)
-    for sx in [245,270,292]: a.add_sprite(db.BRAMBALL, sx*16, 24*16)
-    a.add_sprite(db.STAR_COIN, 268*16, 16*16, spritedata=bytes([0,0,0,0,2,0]))
-    a.add_ground(300, 20, 12, 8, tileset=1)
-    a.add_sprite(db.GOAL_POLE, 308*16, 19*16)
-    builder.save("output/ChaosStation/Stage/05-03.arc")
-    print("Created 5-3: Bramball Factory")
+    a.add_sprite(db.HAMMER_BRO, 195 * 16, 21 * 16)
+    a.add_sprite(db.HAMMER_BRO, 210 * 16, 21 * 16)
+
+    # ══ ZONE 5: P-Switch bridge (X 225–300) ══
+    # P-Switch converts bricks to coins forming a bridge across Bramball territory
+    a.add_sprite(db.P_SWITCH, 228 * 16, 18 * 16)
+    for bx in range(235, 295, 1):
+        a.add_brick_block(bx, 22, contents=0)
+    # Star Coin 3 — on top of the far end of the P-Switch bridge
+    a.add_sprite(db.STAR_COIN, 288 * 16, 17 * 16, spritedata=bytes([0,0,0,0,0,2]))
+
+    # ── End platform and Goal Pole ──
+    # Width=20 gives 12 tiles to the right of the pole for the victory animation walk-off.
+    a.add_ground(300, 20, 20, 8, tileset=1)
+    a.add_sprite(db.GOAL_POLE, 308 * 16, 19 * 16)
+
+    builder.save('output/ChaosStation/Stage/05-03.arc')
+    print('Created 5-3: Bramball Factory')
 
 
 def create_level_5_4():
+    """5-4: Jumbo Sky Parade — soar above the canopy on Giant Wigglers.
+    Crowbers attack; Banzai Bills fly in the final stretch.
+    """
     from tools.level_builder import LevelBuilder
     import tools.sprite_db as db
+
     builder = LevelBuilder()
     a = builder.add_area(1)
     a.set_tileset(1, db.TILESET_FOREST)
     a.set_background(bg2=db.BG_ATHLETIC_SKY_1)
     a.set_time(400)
     a.add_zone(0, 0, 8000, 640, zone_id=0, music=db.MUSIC_ATHLETIC, cam_mode=0)
-    a.add_sprite(db.POISON_FILL, 0, 26*16, spritedata=b"\x01\x00\x00\x00\x00\x00")
+
+    # Enormous poison chasm below — fall is instant death
+    a.add_sprite(db.POISON_FILL, 0, 26 * 16, spritedata=b'\x01\x00\x00\x00\x00\x00')
+
+    # ── Safe launch platform ──
     a.add_ground(0, 20, 12, 8, tileset=1)
-    a.add_entrance(0, 3*16, 18*16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 5*16, 19*16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-    a.add_sprite(10, 3*16, 18*16)
-    a.add_sprite(db.MIDWAY_FLAG, 5*16, 19*16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-    a.add_sprite(275, 10*16, 25*16, spritedata=b"\x00\x00\x00\x00\x01\x10")
-    for ex in [30,40,55,65,75]: a.add_sprite(db.GOOMBA, ex*16, 24*16)
-    a.add_sprite(db.PARAGOOMBA, 35*16, 18*16)
-    a.add_sprite(db.PARAGOOMBA, 60*16, 16*16)
-    a.add_sprite(db.CROWBER, 45*16, 12*16)
-    for kx in [85,100,115]: a.add_sprite(db.KOOPA, kx*16, 24*16)
-    for gx in [95,130]: a.add_sprite(db.GOOMBA, gx*16, 24*16)
-    a.add_sprite(db.SLEDGE_BRO, 140*16, 24*16)
-    a.add_sprite(db.FIRE_BRO, 120*16, 24*16)
-    a.add_sprite(db.PARAGOOMBA, 105*16, 16*16)
-    a.add_sprite(db.PARAGOOMBA, 145*16, 16*16)
-    a.add_sprite(db.CROWBER, 90*16, 12*16)
-    a.add_sprite(db.CROWBER, 150*16, 12*16)
-    for hx in [170,210]: a.add_sprite(db.HAMMER_BRO, hx*16, 24*16)
-    for sx in [190,230]: a.add_sprite(db.SLEDGE_BRO, sx*16, 24*16)
-    for fx in [200,245]: a.add_sprite(db.FIRE_BRO, fx*16, 24*16)
-    for kx in [180,250]: a.add_sprite(db.KOOPA, kx*16, 24*16)
-    for pgx in [175,225]: a.add_sprite(db.PARAGOOMBA, pgx*16, 16*16)
-    for crx in [185,220,255]: a.add_sprite(db.CROWBER, crx*16, 10*16)
-    for blx in [200,240]: a.add_sprite(db.BANZAI_BILL_LAUNCHER, blx*16, 20*16)
-    for hx in [270,345]: a.add_sprite(db.HAMMER_BRO, hx*16, 24*16)
-    a.add_sprite(db.SLEDGE_BRO, 295*16, 24*16)
-    a.add_sprite(db.FIRE_BRO, 320*16, 24*16)
-    for kx in [280,335]: a.add_sprite(db.KOOPA, kx*16, 24*16)
-    for pgx in [285,340]: a.add_sprite(db.PARAGOOMBA, pgx*16, 16*16)
-    for crx in [290,315,350]: a.add_sprite(db.CROWBER, crx*16, 10*16)
-    for blx in [290,330,360]: a.add_sprite(db.BANZAI_BILL_LAUNCHER, blx*16, 20*16)
-    a.add_platform(50, 22, width=1)
-    a.add_sprite(db.STAR_COIN, 51*16, 21*16, spritedata=bytes([0,0,0,0,0,0]))
-    a.add_sprite(db.STAR_COIN, 175*16, 20*16, spritedata=bytes([0,0,0,0,1,0]))
-    a.add_sprite(db.STAR_COIN, 320*16, 15*16, spritedata=bytes([0,0,0,0,2,0]))
-    a.add_ground(370, 22, 20, 6, tileset=1)
-    a.add_sprite(db.GOAL_POLE, 384*16, 21*16)
-    builder.save("output/ChaosStation/Stage/05-04.arc")
-    print("Created 5-4: Toxic Crossing")
+    a.add_entrance(0, 3 * 16, 18 * 16, etype=db.ENTRANCE_NORMAL)
+    a.add_entrance(1, 124 * 16, 19 * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
+    a.add_sprite(10, 3 * 16, 18 * 16)
+
+    # ══ PHASE 1: Slow Giant Wigglers, Crowbers dive-bombing (X 15–120) ══
+    # 4 Giant Wigglers traversing different Y heights, easy to read rhythm
+    phase1_wigglers = [(18, 21), (40, 19), (65, 22), (90, 20), (115, 21)]
+    for (wx, wy) in phase1_wigglers:
+        a.add_sprite(db.GIANT_WIGGLER, wx * 16, wy * 16)
+    # Crowbers attack from above
+    for cx in [25, 50, 78, 105]:
+        a.add_sprite(db.CROWBER, cx * 16, 10 * 16)
+    # Star Coin 1 — above Phase 1, reachable by jumping off a Giant Wiggler's back
+    a.add_sprite(db.STAR_COIN, 65 * 16, 14 * 16, spritedata=bytes([0,0,0,0,0,0]))
+
+    # ── Resting platform between phases ──
+    a.add_ground(122, 20, 10, 6, tileset=1)
+    a.add_sprite(db.MIDWAY_FLAG, 124 * 16, 19 * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
+
+    # ══ PHASE 2: Faster Wigglers, converging Y paths (X 135–250) ══
+    # Two Wiggler "lanes" that cross — must hop between them
+    for i, wx in enumerate(range(138, 248, 22)):
+        wy_top = 18 if i % 2 == 0 else 22
+        wy_bot = 22 if i % 2 == 0 else 18
+        a.add_sprite(db.GIANT_WIGGLER, wx * 16, wy_top * 16)
+        a.add_sprite(db.GIANT_WIGGLER, (wx + 8) * 16, wy_bot * 16)
+    # Star Coin 2 — at the convergence point of the two lanes
+    a.add_sprite(db.STAR_COIN, 196 * 16, 19 * 16, spritedata=bytes([0,0,0,0,0,1]))
+    # Para-Goombas weave between the lanes
+    for pgx in [150, 175, 210, 235]:
+        a.add_sprite(db.PARAGOOMBA, pgx * 16, 16 * 16)
+
+    # ══ PHASE 3: Banzai Bills cross the path while riding final Wigglers (X 255–380) ══
+    for wx in [258, 282, 310, 338, 362]:
+        a.add_sprite(db.GIANT_WIGGLER, wx * 16, 21 * 16)
+    # Banzai Bill launchers fire from the right
+    for blx in [280, 320, 355]:
+        a.add_sprite(db.BANZAI_BILL_LAUNCHER, blx * 16, 19 * 16)
+    # Star Coin 3 — on a tiny floating ledge just before the goal
+    a.add_ground(370, 17, 4, 2, tileset=1)
+    a.add_sprite(db.STAR_COIN, 371 * 16, 16 * 16, spritedata=bytes([0,0,0,0,0,2]))
+
+    # ── Landing platform and Goal Pole ──
+    a.add_ground(385, 20, 14, 8, tileset=1)
+    a.add_sprite(db.GOAL_POLE, 394 * 16, 19 * 16)
+
+    builder.save('output/ChaosStation/Stage/05-04.arc')
+    print('Created 5-4: Jumbo Sky Parade')
 
 
 def create_level_5_5():
-    """5-5: Piranha Pipeline — dark zigzag descent through cave.
-    visibility=36 (same as ghost houses). 6 floors alternate gap sides (18 tiles apart).
+    """5-5: Piranha Pipeline — vertical descent through 7 floors of Piranha Plants.
+    The hardest regular level in World 5. Downward scrolling cam, tight corridors.
     """
     from tools.level_builder import LevelBuilder
     import tools.sprite_db as db
+
     builder = LevelBuilder()
     a = builder.add_area(1)
     a.set_tileset(1, db.TILESET_CAVE)
     a.set_background(bg2=db.BG_UNDERGROUND)
     a.set_time(500)
-    a.add_zone(0, 0, 1280, 2300, zone_id=0, music=db.MUSIC_UNDERGROUND,
-               cam_mode=3, visibility=36)
+    # Vertical scrolling zone — camera follows Mario as he descends
+    a.add_zone(0, 0, 1280, 10000, zone_id=0, music=db.MUSIC_UNDERGROUND, cam_mode=3)
 
-    for fy in range(23, 110):
+    # ── Top spawn ──
+    a.add_ground(0, 2, 80, 4, tileset=1)
+    a.add_entrance(0, 20 * 16, 5 * 16, etype=db.ENTRANCE_NORMAL)
+    a.add_entrance(1, 40 * 16, 47 * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
+    a.add_sprite(10, 20 * 16, 5 * 16)
+
+    # Helper: left and right cave walls throughout
+    for fy in range(5, 85, 1):
         a.add_ground(0, fy, 2, 1, tileset=1)
-    for fy in range(23, 92):
         a.add_ground(78, fy, 2, 1, tileset=1)
 
-    # SPAWN (Y=20)
-    a.add_ground(2, 20, 36, 3, tileset=1)
-    a.add_entrance(0, 20 * 16, 19 * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 60 * 16, 73 * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-    a.add_sprite(10, 20 * 16, 19 * 16)
-    a.add_sprite(db.PIRANHA_PLANT, 8 * 16, 19 * 16)
-    a.add_sprite(db.PIRANHA_PLANT, 30 * 16, 19 * 16)
-    a.add_sprite(db.PIRANHA_PLANT, 34 * 16, 19 * 16)
+    # ══ FLOOR 1 (Y 8–18): Standard Piranha Plants flanking a wide corridor ══
+    a.add_ground(0, 18, 26, 3, tileset=1)
+    a.add_ground(54, 18, 26, 3, tileset=1)
+    # Piranhas in pipes along the walls
+    for py in [10, 14]:
+        a.add_sprite(db.PIRANHA_PLANT, 4 * 16, py * 16)
+        a.add_sprite(db.PIRANHA_PLANT, 70 * 16, py * 16)
 
-    # FLOOR 2 (Y=38): GAP LEFT
-    a.add_ground(40, 38, 38, 3, tileset=1)
-    a.add_sprite(db.FIRE_PIRANHA_PLANT, 48 * 16, 37 * 16)
-    a.add_sprite(db.FIRE_PIRANHA_PLANT, 60 * 16, 37 * 16)
-    a.add_sprite(db.FIRE_PIRANHA_PLANT, 72 * 16, 37 * 16)
-    a.add_sprite(db.PIRANHA_PLANT, 55 * 16, 35 * 16)
-    a.add_ground(15, 34, 8, 2, tileset=1)
-    a.add_sprite(db.PIRANHA_PLANT, 18 * 16, 33 * 16)
-    a.add_sprite(db.PIRANHA_PLANT, 20 * 16, 33 * 16)
-    a.add_sprite(db.STAR_COIN, 60 * 16, 34 * 16, spritedata=bytes([0,0,0,0,0,0]))
+    # ══ FLOOR 2 (Y 20–30): Two moving platforms, Fire Piranhas shoot across ══
+    a.add_ground(0, 30, 18, 3, tileset=1)
+    a.add_ground(62, 30, 18, 3, tileset=1)
+    a.add_sprite(db.BASIC_PLATFORM, 25 * 16, 25 * 16)
+    a.add_sprite(db.BASIC_PLATFORM, 48 * 16, 27 * 16)
+    a.add_sprite(db.FIRE_PIRANHA_PLANT, 10 * 16, 28 * 16)
+    a.add_sprite(db.FIRE_PIRANHA_PLANT, 65 * 16, 28 * 16)
+    # Star Coin 1 — in a recess on the right wall
+    a.add_ground(70, 22, 8, 2, tileset=1)  # ledge inset
+    a.add_sprite(db.STAR_COIN, 72 * 16, 21 * 16, spritedata=bytes([0,0,0,0,0,0]))
 
-    # FLOOR 3 (Y=56): GAP RIGHT
-    a.add_ground(2, 56, 36, 3, tileset=1)
-    a.add_sprite(db.BIG_PIRANHA_PLANT, 10 * 16, 55 * 16)
-    a.add_sprite(db.BIG_PIRANHA_PLANT, 22 * 16, 55 * 16)
-    a.add_sprite(db.FIRE_PIRANHA_PLANT, 32 * 16, 55 * 16)
-    a.add_ground(55, 52, 8, 2, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 58 * 16, 51 * 16)
+    # ══ FLOOR 3 (Y 32–42): Stalking Piranhas track from above and below ══
+    a.add_ground(0, 42, 22, 3, tileset=1)
+    a.add_ground(58, 42, 22, 3, tileset=1)
+    # Stalking Piranhas at varied Y heights — player must time descent
+    for sly in [34, 37, 40]:
+        a.add_sprite(db.BIG_PIRANHA_PLANT, 30 * 16, sly * 16)
+        a.add_sprite(db.BIG_PIRANHA_PLANT, 50 * 16, sly * 16)
+    a.add_sprite(db.PIRANHA_PLANT, 38 * 16, 39 * 16)
 
-    # FLOOR 4 (Y=74): GAP LEFT
-    a.add_ground(40, 74, 38, 3, tileset=1)
-    a.add_sprite(db.FIRE_BRO, 48 * 16, 73 * 16)
-    a.add_sprite(db.FIRE_BRO, 62 * 16, 73 * 16)
-    a.add_sprite(db.HAMMER_BRO, 55 * 16, 73 * 16)
-    a.add_sprite(db.HAMMER_BRO, 72 * 16, 73 * 16)
-    a.add_sprite(db.MIDWAY_FLAG, 60 * 16, 73 * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-    a.add_ground(10, 70, 10, 2, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 14 * 16, 69 * 16)
-    a.add_sprite(db.STAR_COIN, 70 * 16, 69 * 16, spritedata=bytes([0,0,0,0,1,0]))
+    # ══ FLOOR 4 (Y 44–54): Narrow ledges, Fire Bros, Midway Flag ══
+    # Three narrow ledges forming stepping stones down the center
+    for lx, ly in [(28,48),(38,51),(48,48),(22,54),(56,54)]:
+        a.add_ground(lx, ly, 6, 2, tileset=1)
+    a.add_sprite(db.FIRE_BRO, 34 * 16, 47 * 16)
+    a.add_sprite(db.FIRE_BRO, 52 * 16, 53 * 16)
+    a.add_sprite(db.MIDWAY_FLAG, 40 * 16, 47 * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
+    # Star Coin 2 — guarded by Fire Bro on a side ledge
+    a.add_ground(62, 47, 8, 2, tileset=1)
+    a.add_sprite(db.STAR_COIN, 64 * 16, 46 * 16, spritedata=bytes([0,0,0,0,0,1]))
 
-    # FLOOR 5 (Y=92): GAP RIGHT
-    a.add_ground(2, 92, 36, 3, tileset=1)
-    a.add_sprite(db.BIG_PIRANHA_PLANT, 10 * 16, 91 * 16)
-    a.add_sprite(db.BIG_PIRANHA_PLANT, 25 * 16, 91 * 16)
-    a.add_sprite(db.FIRE_PIRANHA_PLANT, 32 * 16, 91 * 16)
-    for gpy in [87, 90]:
-        a.add_sprite(db.PIPE_PIRANHA_RIGHT, 5 * 16, gpy * 16)
-        a.add_sprite(db.PIPE_PIRANHA_RIGHT, 15 * 16, gpy * 16)
-        a.add_sprite(db.PIPE_PIRANHA_RIGHT, 25 * 16, gpy * 16)
-    a.add_ground(55, 88, 8, 2, tileset=1)
-    a.add_sprite(db.FIRE_BRO, 58 * 16, 87 * 16)
+    # ══ FLOOR 5 (Y 56–66): Piranha Gauntlet — 4-tile safe corridor ══
+    # Both walls lined with Piranhas — only center 4 tiles are survivable
+    a.add_ground(0, 66, 30, 3, tileset=1)
+    a.add_ground(50, 66, 30, 3, tileset=1)
+    for gpy in [58, 61, 64]:
+        for gpx in [5, 12, 20]:
+            a.add_sprite(db.PIPE_PIRANHA_RIGHT, gpx * 16, gpy * 16)
+        for gpx in [55, 62, 70]:
+            a.add_sprite(db.PIPE_PIRANHA_LEFT, gpx * 16, gpy * 16)
 
-    # FLOOR 6 (Y=110): GAP LEFT
-    a.add_ground(40, 110, 38, 3, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 48 * 16, 109 * 16)
-    a.add_sprite(db.CHAIN_CHOMP, 62 * 16, 109 * 16)
-    a.add_sprite(db.HAMMER_BRO, 55 * 16, 109 * 16)
-    a.add_sprite(db.SLEDGE_BRO, 72 * 16, 109 * 16)
-    a.add_ground(8, 106, 10, 2, tileset=1)
-    a.add_sprite(db.PIRANHA_PLANT, 12 * 16, 105 * 16)
-    a.add_sprite(db.PIRANHA_PLANT, 15 * 16, 105 * 16)
-    a.add_sprite(db.STAR_COIN, 48 * 16, 105 * 16, spritedata=bytes([0,0,0,0,2,0]))
+    # ══ FLOOR 6 (Y 68–76): Wide rest area — Hammer Bros and Chain Chomp ══
+    a.add_ground(0, 76, 80, 4, tileset=1)
+    a.add_sprite(db.HAMMER_BRO, 15 * 16, 75 * 16)
+    a.add_sprite(db.HAMMER_BRO, 60 * 16, 75 * 16)
+    a.add_sprite(db.SLEDGE_BRO, 38 * 16, 75 * 16)
+    a.add_sprite(db.CHAIN_CHOMP, 28 * 16, 75 * 16)
+    a.add_sprite(db.CHAIN_CHOMP, 52 * 16, 75 * 16)
 
-    # GOAL (Y=128)
-    a.add_ground(2, 128, 76, 4, tileset=1)
-    a.add_sprite(db.PIPE_FIRE_PIRANHA_UP, 8 * 16, 127 * 16)
-    a.add_sprite(db.PIPE_FIRE_PIRANHA_UP, 20 * 16, 127 * 16)
-    a.add_sprite(db.PIPE_FIRE_PIRANHA_UP, 35 * 16, 127 * 16)
-    a.add_sprite(db.HAMMER_BRO, 45 * 16, 127 * 16)
-    a.add_sprite(db.GOAL_POLE, 65 * 16, 127 * 16)
+    # ══ FLOOR 7 (Y 78–86): Final tight pipe maze, 8 Fire Piranhas ══
+    a.add_ground(0, 86, 14, 4, tileset=1)
+    a.add_ground(19, 86, 14, 4, tileset=1)
+    a.add_ground(39, 86, 14, 4, tileset=1)
+    a.add_ground(59, 86, 14, 4, tileset=1)
+    # Fire Piranhas filling every corridor segment
+    for fpx in [8, 28, 48, 68]:
+        a.add_sprite(db.PIPE_FIRE_PIRANHA_UP, fpx * 16, 84 * 16)
+        a.add_sprite(db.FIRE_PIRANHA_PLANT, fpx * 16, 80 * 16)
+    # Star Coin 3 — deep in a dead-end side pipe, requires backtrack
+    a.add_ground(72, 82, 8, 2, tileset=1)
+    a.add_sprite(db.STAR_COIN, 74 * 16, 81 * 16, spritedata=bytes([0,0,0,0,0,2]))
+    a.add_sprite(db.PIRANHA_PLANT, 74 * 16, 84 * 16)
+
+    # ── Bottom cavern exit — press right to Goal Pole ──
+    a.add_ground(0, 90, 80, 6, tileset=1)
+    a.add_sprite(db.GOAL_POLE, 70 * 16, 89 * 16)
 
     builder.save('output/ChaosStation/Stage/05-05.arc')
-    print('Created 5-5: Piranha Pipeline (dark zigzag)')
+    print('Created 5-5: Piranha Pipeline')
 
 
 def create_level_5_castle():
@@ -7728,101 +7825,66 @@ def create_level_5_castle():
 
 
 def create_level_5_cannon():
-    """5-Cannon: Thornbolt Catapult. Cave gauntlet rebuilt from scratch.
-    Chain Chomps, Broozers, Big Boos, Fire Bars. Cannon to World 8.
-    """
-    from tools.level_builder import LevelBuilder
-    import tools.sprite_db as db
+    """Modify 05-36: Thornbolt Cannon - CHAOTIC rapid gauntlet."""
+    import copy
+    import os
     from tools.u8archive import U8Archive
-    from tools.course_parser import (
-        parse_course_bin, serialize_course_bin,
-        parse_layer_data, serialize_layer_data,
-        Sprite, LayerObject, Entrance, Zone, Bounding, Tileset,
-    )
+    from tools.course_parser import parse_course_bin, serialize_course_bin, Sprite
+    import tools.sprite_db as db
 
     src = 'extracted files/Stage/05-36.arc'
     dst = 'output/ChaosStation/Stage/05-36.arc'
+
     try:
         arc = U8Archive.load(open(src, 'rb').read())
     except Exception as e:
         print(f"Skipping 5-Cannon: couldn't open {src} - {e}")
         return
 
-    def safe_get(path):
-        try: return arc.get_file(path)
-        except KeyError: return None
-
     area = parse_course_bin(arc.get_file('course/course1.bin'))
-    area.layer0 = parse_layer_data(safe_get('course/course1_bgdatL0.bin') or b'')
-    area.layer1 = parse_layer_data(safe_get('course/course1_bgdatL1.bin') or b'')
-    area.layer2 = parse_layer_data(safe_get('course/course1_bgdatL2.bin') or b'')
-    area.sprites.clear(); area.entrances.clear(); area.zones.clear(); area.boundings.clear()
-    area.layer0.clear(); area.layer1.clear(); area.layer2.clear()
-    area.tileset = Tileset(slot0=db.TILESET_STANDARD, slot1=db.TILESET_CAVE, slot2='', slot3='')
-    area.settings.time_limit = 200
-
-    area.zones.append(Zone(x=256, y=256, w=2560, h=512, zone_id=0, music=db.MUSIC_CASTLE, cam_mode=0, cam_zoom=0, visibility=0))
-    area.boundings.append(Bounding(upper=0, lower=0, upper2=0, lower2=0, bound_id=0, mp_cam_zoom=15, upper3=0, lower3=0))
-
+    z = area.zones[0] if area.zones else None
     SD = bytes(6)
-    fb_cw = b'\x00\x00\x00\x00\x10\x07'
-    fb_ccw = b'\x00\x00\x00\x00\x00\x07'
-    TX, GY = 16, 45
+    fb_sd_cw = b'\x00\x00\x00\x00\x10\x07'
+    fb_sd_ccw = b'\x00\x00\x00\x00\x00\x07'
 
-    def add_ground(x, y, w, h):
-        area.layer1.append(LayerObject(tileset=1, obj_type=db.CaveObjs.GROUND_TOP, x=x, y=y, w=w, h=1))
-        if h > 1: area.layer1.append(LayerObject(tileset=1, obj_type=db.CaveObjs.GROUND_FILL, x=x, y=y+1, w=w, h=h-1))
-    def spr(stype, x, y, data=SD):
-        area.sprites.append(Sprite(stype=stype, x=x, y=y, spritedata=data, zone_id=0, extra_byte=0))
+    def clamped(x, y, pad=24):
+        if z is None:
+            return x, y
+        cx = min(max(x, z.x + pad), z.x + z.w - pad)
+        cy = min(max(y, z.y + pad), z.y + z.h - pad)
+        return cx, cy
 
-    area.entrances.append(Entrance(x=(TX+2)*16, y=(GY-2)*16, entrance_id=0, dest_area=0, dest_entrance=0, etype=db.ENTRANCE_NORMAL, zone_id=0, layer=0, path=0, unk1=0, unk2=0, settings=0, leave_level=0, cp_direction=0))
+    strip_types = {db.FIRE_BRO, db.CROWBER, db.SPIKE_TOP, db.BOB_OMB, db.KOOPA_PARATROOPA}
+    new_sprites = [copy.deepcopy(s) for s in area.sprites if s.stype not in strip_types]
+    area.settings.time_limit = 145
 
-    add_ground(TX, GY, 10, 7); add_ground(TX+13, GY+1, 6, 6)
-    spr(db.CHAIN_CHOMP, (TX+4)*16, (GY-1)*16); spr(db.CHAIN_CHOMP, (TX+16)*16, GY*16)
-    spr(db.BROOZER, (TX+7)*16, (GY-1)*16)
+    attack_lane = [
+        (db.SLEDGE_BRO, 984, 448, SD),
+        (db.AMP, 1120, 352, SD),
+        (db.CHAIN_CHOMP, 1248, 512, SD),
+        (db.BIG_BOO, 1360, 496, SD),
+        (db.FIRE_BAR, 1456, 432, fb_sd_cw),
+        (db.SLEDGE_BRO, 1536, 432, SD),
+        (db.AMP, 1648, 336, SD),
+        (db.CHAIN_CHOMP, 1728, 512, SD),
+        (db.FIRE_BAR, 1808, 432, fb_sd_ccw),
+        (db.GIANT_DRY_BONES, 1872, 496, SD),
+    ]
 
-    add_ground(TX+22, GY-1, 5, 4); add_ground(TX+30, GY-3, 8, 4); add_ground(TX+30, GY+2, 8, 5)
-    spr(db.BIG_BOO, (TX+25)*16, (GY-4)*16)
-    spr(db.FIRE_BAR, (TX+32)*16, (GY-4)*16, fb_cw); spr(db.FIRE_BAR, (TX+36)*16, (GY-4)*16, fb_ccw)
-    spr(db.AMP, (TX+28)*16, (GY-5)*16)
-    spr(db.STAR_COIN, (TX+34)*16, (GY-8)*16, b'\x00\x00\x00\x00\x00\x00')
+    for stype, x, y, sd in attack_lane:
+        cx, cy = clamped(x, y)
+        new_sprites.append(Sprite(stype=stype, x=cx, y=cy, spritedata=sd, zone_id=0, extra_byte=0))
 
-    add_ground(TX+42, GY, 12, 7); add_ground(TX+56, GY-2, 6, 4)
-    spr(db.SLEDGE_BRO, (TX+45)*16, (GY-1)*16); spr(db.SLEDGE_BRO, (TX+51)*16, (GY-1)*16)
-    spr(db.GIANT_DRY_BONES, (TX+58)*16, (GY-3)*16)
-    spr(db.BROOZER, (TX+48)*16, (GY-1)*16)
-    spr(db.MIDWAY_FLAG, (TX+60)*16, (GY-3)*16)
-
-    add_ground(TX+65, GY+1, 4, 6); add_ground(TX+72, GY-1, 5, 5); add_ground(TX+80, GY+2, 4, 5); add_ground(TX+87, GY-2, 6, 4)
-    spr(db.FIRE_BAR, (TX+66)*16, GY*16, fb_ccw); spr(db.FIRE_BAR, (TX+74)*16, (GY-2)*16, fb_cw)
-    spr(db.FIRE_BAR, (TX+82)*16, (GY+1)*16, fb_ccw)
-    spr(db.BIG_BOO, (TX+78)*16, (GY-6)*16); spr(db.AMP, (TX+70)*16, (GY-4)*16)
-    spr(db.BULLET_BILL_LAUNCHER, (TX+76)*16, (GY-3)*16)
-    spr(db.STAR_COIN, (TX+89)*16, (GY-6)*16, b'\x00\x00\x00\x00\x01\x00')
-
-    add_ground(TX+96, GY, 5, 7); add_ground(TX+104, GY-4, 5, 5); add_ground(TX+112, GY-1, 4, 3)
-    spr(db.CHAIN_CHOMP, (TX+97)*16, (GY-1)*16); spr(db.CHAIN_CHOMP, (TX+106)*16, (GY-5)*16)
-    spr(db.FIRE_BAR, (TX+108)*16, (GY-5)*16, fb_cw)
-    spr(db.BIG_BOO, (TX+100)*16, (GY-8)*16)
-    spr(db.BULLET_BILL_LAUNCHER, (TX+110)*16, (GY-2)*16)
-
-    add_ground(TX+119, GY, 15, 7); add_ground(TX+123, GY-5, 8, 6)
-    spr(db.BROOZER, (TX+121)*16, (GY-1)*16); spr(db.BROOZER, (TX+126)*16, (GY-6)*16)
-    spr(db.SLEDGE_BRO, (TX+130)*16, (GY-1)*16)
-    spr(db.BIG_BOO, (TX+125)*16, (GY-10)*16)
-    spr(db.STAR_COIN, (TX+127)*16, (GY-10)*16, b'\x00\x00\x00\x00\x02\x00')
-    spr(434, (TX+130)*16, (GY-6)*16, b'\x00\x00\x00\x00\x00\x03')  # Cannon -> W8
-
-    area.loaded_sprites = sorted(set(s.stype for s in area.sprites))
+    area.sprites = new_sprites
+    area.loaded_sprites = sorted(set(s.stype for s in new_sprites))
     arc.set_file('course/course1.bin', serialize_course_bin(area))
-    arc.set_file('course/course1_bgdatL0.bin', serialize_layer_data(area.layer0))
-    arc.set_file('course/course1_bgdatL1.bin', serialize_layer_data(area.layer1))
-    arc.set_file('course/course1_bgdatL2.bin', serialize_layer_data(area.layer2))
-    data = arc.pack()
+
+    packed = arc.pack()
     os.makedirs(os.path.dirname(dst), exist_ok=True)
-    with open(dst, 'wb') as f: f.write(data)
-    print(f'Saved: {dst} ({len(data)} bytes)')
-    print('Created 5-Cannon: Thornbolt Catapult (W8 destination)')
+    with open(dst, 'wb') as f:
+        f.write(packed)
+    print(f'Saved: {dst} ({len(packed)} bytes)')
+    print('Modified 5-Cannon: Thornbolt Cannon (Chaotic)')
 
 
 def create_level_5_ambush():
@@ -7923,137 +7985,155 @@ def create_level_5_ambush():
 
 
 def create_level_5_ghost_house():
-    """5-GH: The Gloom Manor — dark ghost house with visibility=36.
-    Area 1: 4 rooms with Boos, Dry Bones, Broozers, Swoops.
-    Area 2: Attic with normal goal pole and red goal pole secret exit.
-    Door pattern: sprite 276 at same pixel Y as entrance.
+    """Create 5-GH: The Gloom Manor — a proper 2-area Ghost House.
+
+    AREA 1: A sprawling haunted manor. Glow Blocks light the way through Boo-filled rooms.
+            The main exit is a Ghost Door at the far right leading to Area 2.
+            A secret exit is a higher door that requires solving the Boo-light puzzle.
+
+    AREA 2: The Attic — small reward room above the manor.
+            Normal exit: Goal Pole (the standard Ghost House clear).
+            Secret exit: a concealed door reached by ignoring the obvious exit.
+
+    Concept: Dark (visibility=29) horizontal traversal through 4 distinct rooms,
+    each lit by a Glow Block Mario must find and carry. Boos guard every path.
     """
     from tools.level_builder import LevelBuilder
     import tools.sprite_db as db
+
     builder = LevelBuilder()
 
-    # AREA 1
+    # ════════════════════════════════════════
+    #   AREA 1 — The Manor Interior
+    # ════════════════════════════════════════
     a1 = builder.add_area(1)
     a1.set_tileset(1, db.TILESET_GHOST_HOUSE)
     a1.set_background(bg2=db.BG_GHOST_HOUSE)
     a1.set_time(400)
-    a1.add_zone(0, 0, 7000, 640, zone_id=0, music=db.MUSIC_GHOST_HOUSE, cam_mode=0, visibility=36)
+    # Dimly lit zone — visibility=29 makes it spooky but not pitch black
+    a1.add_zone(0, 0, 7000, 640, zone_id=0, music=db.MUSIC_GHOST_HOUSE, cam_mode=0, visibility=29)
 
-    a1.add_ground(0, 26, 280, 5, tileset=1)
-    a1.add_ground(0, 5, 280, 3, tileset=1)
+    # Spawn at left side on solid ground
     a1.add_ground(0, 22, 12, 8, tileset=1)
     a1.add_entrance(0, 3 * 16, 20 * 16, etype=db.ENTRANCE_NORMAL)
     a1.add_sprite(10, 3 * 16, 20 * 16)
 
-    # Room 1: Foyer (X 12-78)
-    a1.add_ground(20, 20, 12, 2, tileset=1)
-    a1.add_ground(50, 18, 10, 2, tileset=1)
+    # ── Solid manor floor and ceiling throughout ──
+    # Floor
+    a1.add_ground(0, 26, 420, 5, tileset=1)
+    # Ceiling beam — creates enclosed manor feeling
+    a1.add_ground(0, 5, 420, 3, tileset=1)
+
+    # ══ ROOM 1: Foyer — introduction to darkness (X 12–80) ══
+    # Glow Block hanging in middle of the room — Mario must grab it
     a1.add_sprite(db.GLOW_BLOCK, 40 * 16, 18 * 16)
+    # Boos circle in the gloom
     a1.add_sprite(db.BOO, 25 * 16, 17 * 16)
     a1.add_sprite(db.BOO, 35 * 16, 15 * 16)
-    a1.add_sprite(db.BOO, 50 * 16, 20 * 16)
     a1.add_sprite(db.BOO, 55 * 16, 18 * 16)
     a1.add_sprite(db.BIG_BOO, 65 * 16, 13 * 16)
-    a1.add_sprite(db.DRY_BONES, 30 * 16, 25 * 16)
-    a1.add_sprite(db.DRY_BONES, 50 * 16, 25 * 16)
-    a1.add_sprite(db.DRY_BONES, 70 * 16, 25 * 16)
-    a1.add_sprite(db.BROOZER, 40 * 16, 25 * 16)
-    a1.add_sprite(db.SWOOP, 25 * 16, 7 * 16)
-    a1.add_sprite(db.SWOOP, 55 * 16, 7 * 16)
-    a1.add_ground(78, 5, 3, 7, tileset=1)
+    # Interior wall dividing Room 1 from Room 2 — has a low gap to squeeze through
+    a1.add_ground(78, 10, 3, 6, tileset=1)   # upper wall
+    # (gap for passage at Y=16–25)
+    a1.add_ground(78, 26, 3, 4, tileset=1)   # lower wall stub
+    # Star Coin 1 — above the Room 1 dividing wall, requires jumping at the top gap
     a1.add_sprite(db.STAR_COIN, 79 * 16, 8 * 16, spritedata=bytes([0,0,0,0,0,0]))
 
-    # Room 2: Gallery (X 82-163) + secret door
-    a1.add_ground(82, 20, 22, 2, tileset=1)
-    a1.add_ground(82, 10, 16, 2, tileset=1)
-    a1.add_ground(110, 18, 14, 2, tileset=1)
-    a1.add_ground(145, 20, 18, 2, tileset=1)
+    # ══ ROOM 2: Gallery — two-level platforms (X 82–165) ══
+    # Two platforms at different heights force vertical navigation
+    a1.add_ground(84, 18, 20, 2, tileset=1)   # lower shelf
+    a1.add_ground(84, 10, 16, 2, tileset=1)   # upper shelf
+    # Second Glow Block on upper shelf — reward for going up
     a1.add_sprite(db.GLOW_BLOCK, 90 * 16, 9 * 16)
-    # Secret door on upper shelf
-    a1.add_sprite(276, 84 * 16, 9 * 16)
-    a1.add_entrance(2, 84 * 16, 9 * 16, etype=db.ENTRANCE_DOOR, dest_area=2, dest_entrance=1)
     a1.add_sprite(db.BOO, 90 * 16, 14 * 16)
     a1.add_sprite(db.BOO, 105 * 16, 17 * 16)
     a1.add_sprite(db.BIG_BOO, 115 * 16, 11 * 16)
     a1.add_sprite(db.BOO, 140 * 16, 16 * 16)
     a1.add_sprite(db.BOO, 155 * 16, 10 * 16)
-    a1.add_sprite(db.DRY_BONES, 100 * 16, 25 * 16)
-    a1.add_sprite(db.DRY_BONES, 130 * 16, 25 * 16)
-    a1.add_sprite(db.DRY_BONES, 150 * 16, 25 * 16)
-    a1.add_sprite(db.SWOOP, 95 * 16, 7 * 16)
-    a1.add_sprite(db.SWOOP, 135 * 16, 7 * 16)
-    a1.add_ground(163, 5, 3, 5, tileset=1)
-    a1.add_sprite(db.MIDWAY_FLAG, 125 * 16, 13 * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
+    # Right wall of Room 2 — gap in middle
+    a1.add_ground(163, 5,  3, 8, tileset=1)    # top portion
+    a1.add_ground(163, 20, 3, 6, tileset=1)    # bottom portion
 
-    # Room 3: Boo Ballroom (X 167-259)
-    a1.add_ground(185, 16, 14, 2, tileset=1)
-    a1.add_ground(205, 12, 10, 2, tileset=1)
-    a1.add_ground(225, 18, 12, 2, tileset=1)
+    # Midway flag on the central platform
+    a1.add_sprite(db.MIDWAY_FLAG, 125 * 16, 17 * 16)
+
+    # ══ ROOM 3: The Boo Ballroom — open space, lots of Boos (X 167–260) ══
     a1.add_sprite(db.GLOW_BLOCK, 200 * 16, 21 * 16)
-    for bx in [170, 183, 197, 215, 228, 244, 255]:
-        a1.add_sprite(db.BOO, bx * 16, 8 * 16)
-    for bx in [175, 195, 210, 232, 250]:
+    for bx in [170, 183, 197, 215, 228, 244, 258]:
+        a1.add_sprite(db.BOO, bx * 16, 13 * 16)
+    for bx in [175, 205, 232, 252]:
         a1.add_sprite(db.BOO, bx * 16, 21 * 16)
-    a1.add_sprite(db.BIG_BOO, 188 * 16, 12 * 16)
-    a1.add_sprite(db.BIG_BOO, 240 * 16, 14 * 16)
-    a1.add_sprite(db.BROOZER, 205 * 16, 25 * 16)
-    a1.add_sprite(db.BROOZER, 225 * 16, 25 * 16)
-    a1.add_sprite(db.BROOZER, 250 * 16, 25 * 16)
-    a1.add_sprite(db.DRY_BONES, 180 * 16, 25 * 16)
-    a1.add_sprite(db.DRY_BONES, 200 * 16, 25 * 16)
-    a1.add_sprite(db.DRY_BONES, 240 * 16, 25 * 16)
-    a1.add_sprite(db.SWOOP, 190 * 16, 7 * 16)
-    a1.add_sprite(db.SWOOP, 220 * 16, 7 * 16)
-    a1.add_sprite(db.SWOOP, 250 * 16, 7 * 16)
-    a1.add_sprite(db.STAR_COIN, 224 * 16, 10 * 16, spritedata=bytes([0,0,0,0,1,0]))
-    a1.add_ground(259, 5, 3, 5, tileset=1)
+    a1.add_sprite(db.BIG_BOO, 188 * 16, 17 * 16)
+    a1.add_sprite(db.BIG_BOO, 240 * 16, 19 * 16)
+    # Star Coin 2 — floating dead-center in the Ballroom
+    a1.add_sprite(db.STAR_COIN, 215 * 16, 19 * 16, spritedata=bytes([0,0,0,0,0,1]))
+    # Right wall — gap at very top only (forces going high to reach it)
+    a1.add_ground(259, 5,  3, 4, tileset=1)
+    a1.add_ground(259, 15, 3, 11, tileset=1)
 
-    # Room 4: Vault (X 263-280) + normal door
-    a1.add_ground(265, 20, 15, 2, tileset=1)
-    a1.add_sprite(276, 270 * 16, 25 * 16)
-    a1.add_entrance(1, 270 * 16, 25 * 16, etype=db.ENTRANCE_DOOR, dest_area=2, dest_entrance=0)
-    a1.add_sprite(db.BIG_BOO, 265 * 16, 16 * 16)
-    a1.add_sprite(db.BOO, 270 * 16, 18 * 16)
-    a1.add_sprite(db.BOO, 275 * 16, 18 * 16)
-    a1.add_sprite(db.BROOZER, 265 * 16, 25 * 16)
-    a1.add_sprite(db.BROOZER, 275 * 16, 25 * 16)
-    a1.add_sprite(db.DRY_BONES, 272 * 16, 25 * 16)
-    a1.add_sprite(db.SWOOP, 285 * 16, 7 * 16)
-    a1.add_sprite(db.STAR_COIN, 270 * 16, 16 * 16, spritedata=bytes([0,0,0,0,2,0]))
-    a1.add_ground(278, 5, 3, 21, tileset=1)
+    # ══ ROOM 4: The Vault — final puzzle room, two doors (X 263–380) ══
+    # Lower path → Normal Ghost Door → Area 2
+    # Upper path → Secret Ghost Door (only reachable by going above Y=12) → secret exit
+    # Two floating platforms create the upper path
+    a1.add_ground(265, 20, 18, 2, tileset=1)   # Lower platform
+    a1.add_ground(280, 11, 18, 2, tileset=1)   # Upper platform
 
-    # AREA 2 — The Attic
+    # Normal Ghost Door (lower) — sits at X=270, Y=19 (on lower platform)
+    a1.add_sprite(276, 270 * 16, 19 * 16)   # draws the door sprite (pixel coords!)
+    a1.add_entrance(1, 270 * 16, 19 * 16, etype=db.ENTRANCE_DOOR)  # Entrance 1 → leads to Area 2 entrance 0
+
+    # Secret Ghost Door (upper) — sits at X=285, Y=10 (on upper platform, behind Big Boo)
+    a1.add_sprite(276, 285 * 16, 10 * 16)   # pixel coords!
+    a1.add_entrance(2, 285 * 16, 10 * 16, etype=db.ENTRANCE_DOOR)  # Entrance 2 → leads to Area 2 entrance 1
+
+    # Guardians
+    a1.add_sprite(db.BIG_BOO, 268 * 16, 16 * 16)
+    a1.add_sprite(db.BIG_BOO, 283 * 16, 8 * 16)
+    a1.add_sprite(db.BOO, 300 * 16, 21 * 16)
+    a1.add_sprite(db.BOO, 300 * 16, 15 * 16)
+
+    # Star Coin 3 — tucked in the far corner of the Vault at ceiling height
+    a1.add_sprite(db.STAR_COIN, 360 * 16, 7 * 16, spritedata=bytes([0,0,0,0,0,2]))
+
+    # ════════════════════════════════════════
+    #   AREA 2 — The Attic
+    # ════════════════════════════════════════
     a2 = builder.add_area(2)
     a2.set_tileset(1, db.TILESET_GHOST_HOUSE)
     a2.set_background(bg2=db.BG_GHOST_HOUSE)
     a2.set_time(300)
-    a2.add_zone(0, 0, 3000, 480, zone_id=0, music=db.MUSIC_GHOST_HOUSE, cam_mode=0, visibility=36)
+    a2.add_zone(0, 0, 3000, 480, zone_id=0, music=db.MUSIC_GHOST_HOUSE, cam_mode=0)
+
+    # Solid attic floor
     a2.add_ground(0, 20, 200, 8, tileset=1)
+    # Ceiling of attic
     a2.add_ground(0, 5, 200, 3, tileset=1)
 
-    a2.add_entrance(0, 5 * 16, 19 * 16, etype=db.ENTRANCE_DOOR)
-    a2.add_sprite(276, 5 * 16, 19 * 16)
-    a2.add_entrance(1, 60 * 16, 19 * 16, etype=db.ENTRANCE_DOOR)
-    a2.add_sprite(276, 60 * 16, 19 * 16)
+    # Entrance 0 — arrive from normal door in Area 1 Vault (lower)
+    a2.add_entrance(0, 5 * 16, 18 * 16, etype=db.ENTRANCE_DOOR)
+    a2.add_sprite(276, 5 * 16, 17 * 16)   # door visual (pixel coords!)
 
-    # Normal exit
+    # Entrance 1 — arrive from secret door in Area 1 Vault (upper)
+    a2.add_entrance(1, 80 * 16, 18 * 16, etype=db.ENTRANCE_DOOR)
+
+    # Normal exit — the Goal Pole straight ahead from Entrance 0
+    a2.add_ground(0, 20, 60, 8, tileset=1)
     a2.add_sprite(db.BIG_BOO, 30 * 16, 15 * 16)
     a2.add_sprite(db.BOO, 45 * 16, 17 * 16)
-    a2.add_sprite(db.DRY_BONES, 40 * 16, 19 * 16)
     a2.add_sprite(db.GOAL_POLE, 55 * 16, 19 * 16)
 
-    # Secret exit — Red Goal Pole
+    # Secret exit — a Ghost Door accessed only from Entrance 1 (the high hidden door)
+    # Behind a cluster of Boos on the far right of the Attic
+    a2.add_ground(75, 20, 60, 8, tileset=1)
     a2.add_sprite(db.BIG_BOO, 82 * 16, 14 * 16)
-    a2.add_sprite(db.BOO, 90 * 16, 16 * 16)
-    a2.add_sprite(db.BOO, 100 * 16, 14 * 16)
-    a2.add_sprite(db.DRY_BONES, 85 * 16, 19 * 16)
-    a2.add_sprite(db.DRY_BONES, 100 * 16, 19 * 16)
-    a2.add_sprite(db.GOAL_POLE, 115 * 16, 19 * 16, spritedata=bytes([0,0,16,0,0,0]))
-    a2.add_sprite(276, 115 * 16, 19 * 16)
-    a2.add_entrance(2, 115 * 16, 19 * 16, etype=db.ENTRANCE_DOOR, leave_level=1)
+    a2.add_sprite(db.BIG_BOO, 95 * 16, 16 * 16)
+    a2.add_sprite(db.BOO, 105 * 16, 14 * 16)
+    a2.add_sprite(276, 115 * 16, 17 * 16)   # Secret exit Ghost Door (pixel coords!)
+    a2.add_entrance(2, 115 * 16, 17 * 16, etype=db.ENTRANCE_DOOR)  # leave_level=1 for secret exit
 
     builder.save('output/ChaosStation/Stage/05-21.arc')
-    print('Created 5-GH: The Gloom Manor (dark, 2-area)')
+    print('Created 5-GH: The Gloom Manor (2-area, dark, Boo/Glow puzzle)')
+
 
 
 def create_level_5_tower():
@@ -8137,20 +8217,20 @@ def create_level_5_tower():
             (db.AMP,            1024,2900, SD),   # Two Amps flanking the path
             (db.FIRE_BAR,       860, 2720, fb_sd_cw),
             (db.SLEDGE_BRO,     640, 2580, SD),
-            (db.SKEWER_DOWN,    860, 2440, SD),   # Skewer crushes from above
+            (db.CHAIN_CHOMP,    860, 2440, SD),   # Chain Chomp replaces removed Skewer
             (db.BIG_BOO,        1024,2300, SD),
             # Middle third — pace quickens
             (db.CHAIN_CHOMP,    720, 2160, SD),
             (db.AMP,            860, 2000, SD),
             (db.FIRE_BAR,       640, 1840, fb_sd_ccw),
-            (db.SKEWER_UP,      860, 1720, SD),   # Skewer rises from floor
+            (db.BIG_BOO,        860, 1720, SD),   # Big Boo replaces removed Skewer
             (db.SLEDGE_BRO,     960, 1580, SD),
             (db.BIG_BOO,        700, 1440, SD),
             (db.AMP,            1024,1280, SD),
             # Upper third — final push
             (db.FIRE_BAR,       860, 1140, fb_long_cw),
             (db.CHAIN_CHOMP,    640, 1000, SD),
-            (db.SKEWER_DOWN,    860,  880, SD),
+            (db.AMP,            860,  880, SD),   # Amp replaces removed Skewer
             (db.GIANT_DRY_BONES,700,  800, SD),
             (db.AMP,            640,  720, SD),
             (db.AMP,            1024, 720, SD),
@@ -8190,12 +8270,6 @@ def create_level_5_tower():
             cx, cy = 512, 448
 
         arena_add = [
-            # Skewers: alternating from ceiling (SKEWER_DOWN) and floor (SKEWER_UP)
-            # Offset left and right of center so they don't all overlap
-            (db.SKEWER_DOWN, -192, -80, SD),
-            (db.SKEWER_DOWN,  192, -80, SD),
-            (db.SKEWER_UP,   -96,   80, SD),
-            (db.SKEWER_UP,    96,   80, SD),
             # Long Fire Bars spinning at mid-height on each side of the arena
             (db.FIRE_BAR, -240,  0, fb_long_cw),
             (db.FIRE_BAR,  240,  0, fb_long_ccw),
@@ -8207,10 +8281,8 @@ def create_level_5_tower():
             # Giant Dry Bones guard the floor edges — discourages standing in corners
             (db.GIANT_DRY_BONES, -280, 80, SD),
             (db.GIANT_DRY_BONES,  280, 80, SD),
-            # Big Boos lurk at ceiling height — attack when Mario is jumping high
-            (db.BIG_BOO,  0, -112, SD),
-            (db.BIG_BOO, -144, -80, SD),
-            (db.BIG_BOO,  144, -80, SD),
+            # Single Big Boo — furthest from Mario (right side of arena)
+            (db.BIG_BOO, 144, -80, SD),
         ]
 
         for stype, dx, dy, sd in arena_add:
@@ -8322,9 +8394,7 @@ def create_peach_castle_farm():
 # ═══════════════════════════════════════════════════════════════════
 
 def create_level_6_1():
-    """06-01: Cliffside Stampede — Chain Chomps, Thwomps, REQUIRED vine swings.
-    Three mandatory vine crossings over wide chasms. Stepping-stone platforms
-    lead up to vine height. Enemies everywhere. Star coins in risky spots."""
+    """06-01: Cliffside Stampede — Chain Chomps, Thwomps, climbable vines."""
     import tools.sprite_db as db
     builder = LevelBuilder()
     a = builder.add_area(1)
@@ -8336,250 +8406,101 @@ def create_level_6_1():
     a.add_zone(0, 0, 15000, 640, zone_id=0, music=db.MUSIC_ATHLETIC, cam_mode=0, visibility=16)
 
     GY = 26
-    VINE = 464  # Climbable Swinging Vine / Chain
-
-    # =======================================================================
-    # SECTION A: Chain Chomp Cliffs (X 0-95)
-    # Intro section with Chain Chomps, building to the first required vine
-    # =======================================================================
-    a.add_ground(0, GY, 14, 5, tileset=1)
+    a.add_ground(0, GY, 15, 5, tileset=1)
     a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 142 * 16, (GY - 1) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
+    a.add_entrance(1, 148 * 16, (GY - 1) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
     a.add_sprite(10, 3 * 16, (GY - 2) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 10 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 12 * 16, (GY - 1) * 16)
 
-    a.add_ground(18, GY, 10, 5, tileset=1)
+    a.add_ground(18, GY, 8, 5, tileset=1)
     a.add_sprite(db.CHAIN_CHOMP, 22 * 16, (GY - 1) * 16)
-    a.add_sprite(db.PARAGOOMBA, 25 * 16, (GY - 5) * 16)
-    a.add_question_block(20, GY - 4, contents=0)
+    a.add_sprite(db.BUZZY_BEETLE, 24 * 16, (GY - 1) * 16)
 
-    a.add_ground(32, GY - 3, 8, 5, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 36 * 16, (GY - 4) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 38 * 16, (GY - 4) * 16)
+    a.add_ground(30, GY - 4, 8, 5, tileset=1)
+    a.add_sprite(db.CHAIN_CHOMP, 34 * 16, (GY - 5) * 16)
 
-    a.add_ground(44, GY, 10, 5, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 48 * 16, (GY - 1) * 16)
-    a.add_sprite(db.CHAIN_CHOMP, 51 * 16, (GY - 1) * 16)
-    a.add_sprite(db.PARAGOOMBA, 46 * 16, (GY - 6) * 16)
+    a.add_ground(42, GY, 8, 5, tileset=1)
+    a.add_sprite(db.CHAIN_CHOMP, 46 * 16, (GY - 1) * 16)
 
-    a.add_ground(58, GY - 3, 6, 5, tileset=1)
-    a.add_sprite(db.KOOPA, 61 * 16, (GY - 4) * 16)
-    a.add_sprite(db.THWOMP, 62 * 16, (GY - 10) * 16)
+    a.add_ground(54, GY - 4, 8, 5, tileset=1)
+    a.add_sprite(db.CHAIN_CHOMP, 58 * 16, (GY - 5) * 16)
 
-    a.add_ground(68, GY, 12, 5, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 72 * 16, (GY - 1) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 76 * 16, (GY - 1) * 16)
-    # Red coin ring — dodge the Chomps and Sledge Bro while grabbing 8 coins
-    a.add_red_coin_ring(71, GY - 4, group_id=0x22, pattern='arc')
+    a.add_ground(66, GY, 12, 5, tileset=1)
+    a.add_sprite(db.BUZZY_BEETLE, 70 * 16, (GY - 1) * 16)
+    a.add_sprite(db.PARAGOOMBA, 72 * 16, (GY - 5) * 16)
 
-    a.add_ground(84, GY - 3, 8, 5, tileset=1)
-    a.add_sprite(db.BUZZY_BEETLE, 86 * 16, (GY - 4) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 89 * 16, (GY - 4) * 16)
-    a.add_sprite(db.PARAGOOMBA, 88 * 16, (GY - 8) * 16)
+    a.add_ground(82, GY, 12, 5, tileset=1)
+    a.add_sprite(db.CHAIN_CHOMP, 87 * 16, (GY - 1) * 16)
 
-    # =======================================================================
-    # VINE CROSSING 1 (REQUIRED) — X 96-124
-    # Ground ends. Must climb stepping stones, grab vine, swing across chasm.
-    # Star Coin #1 is below the vine path — risky drop mid-swing.
-    # =======================================================================
-    a.add_ground(96, GY, 6, 5, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 99 * 16, (GY - 1) * 16)
+    # Vine 1 — climb from gap floor to platform above
+    a.add_ground(94, 12, 3, 2, tileset=1)   # vine origin platform at top
+    a.add_sprite(464, 95 * 16, 12 * 16)
+    a.add_ground(100, 10, 3, 2, tileset=1)
 
-    # Stepping stones UP (player climbs from GY to GY-8)
-    a.add_ground(102, GY - 3, 3, 2, tileset=1)
-    a.add_sprite(db.PARAGOOMBA, 103 * 16, (GY - 6) * 16)
-    a.add_ground(106, GY - 6, 3, 2, tileset=1)
+    a.add_ground(108, GY, 10, 5, tileset=1)
+    a.add_sprite(db.CHAIN_CHOMP, 112 * 16, (GY - 1) * 16)
 
-    # Vine over the chasm — player grabs from the GY-6 step
-    # Gap below is ~12 tiles wide, uncrossable without the vine
-    a.add_sprite(VINE, 110 * 16, (GY - 7) * 16)
+    # Vine 2 — second vine climb
+    a.add_ground(120, 14, 3, 2, tileset=1)
+    a.add_sprite(464, 121 * 16, 14 * 16)
+    a.add_ground(126, 12, 3, 2, tileset=1)
+    a.add_sprite(db.PARAGOOMBA, 123 * 16, 9 * 16)
 
-    # Star Coin #1 — below the vine, on a tiny ledge in the chasm
-    # Must drop from vine mid-swing, grab coin, land on the ledge
-    a.add_ground(111, GY + 1, 2, 2, tileset=1)
-    a.add_sprite(db.STAR_COIN, 111 * 16, GY * 16, spritedata=bytes([0,0,0,0,0,0]))
+    a.add_ground(136, GY, 12, 5, tileset=1)
+    a.add_sprite(db.KOOPA, 140 * 16, (GY - 1) * 16)
+    a.add_sprite(db.STAR_COIN, 103 * 16, 9 * 16, spritedata=bytes([0,0,0,0,0,0]))
 
-    # Landing after vine swing — narrow platform with Thwomp
-    a.add_ground(114, GY - 5, 4, 2, tileset=1)
-    a.add_sprite(db.THWOMP, 116 * 16, (GY - 12) * 16)
+    a.add_sprite(db.MIDWAY_FLAG, 148 * 16, (GY - 1) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
 
-    # Steps back down to ground level
-    a.add_ground(119, GY - 3, 3, 2, tileset=1)
-    a.add_ground(124, GY, 10, 5, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 128 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 131 * 16, (GY - 1) * 16)
+    for px, py in [(152, GY), (166, GY - 4), (180, GY), (194, GY - 4)]:
+        a.add_ground(px, py, 10, 5, tileset=1)
+        a.add_sprite(db.THWOMP, (px + 5) * 16, (py - 6) * 16)
+        a.add_sprite(db.BUZZY_BEETLE, (px + 2) * 16, (py - 1) * 16)
 
-    # =======================================================================
-    # SECTION B: Thwomp + Chomp Gauntlet (X 138-210)
-    # Midway flag, then increasing pressure from Thwomps and Chain Chomps
-    # =======================================================================
-    a.add_ground(138, GY, 14, 5, tileset=1)
-    a.add_sprite(db.MIDWAY_FLAG, 142 * 16, (GY - 1) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-    a.add_sprite(db.KOOPA, 148 * 16, (GY - 1) * 16)
-    a.add_question_block(145, GY - 4, contents=0)
+    # Vine 3 — Thwomp detour
+    a.add_sprite(464, 213 * 16, 12 * 16)
+    a.add_sprite(db.THWOMP, 216 * 16, 8 * 16)
+    a.add_ground(215, 8, 5, 3, tileset=1)
+    a.add_sprite(db.STAR_COIN, 216 * 16, 7 * 16, spritedata=bytes([0,0,0,0,0,1]))
 
-    a.add_ground(156, GY, 8, 5, tileset=1)
-    a.add_sprite(db.THWOMP, 159 * 16, (GY - 8) * 16)
-    a.add_sprite(db.CHAIN_CHOMP, 161 * 16, (GY - 1) * 16)
+    # Section D: Sledge Bro + varied Thwomp gauntlet
+    a.add_ground(230, GY, 10, 5, tileset=1)
+    a.add_sprite(db.SLEDGE_BRO, 234 * 16, (GY - 1) * 16)
 
-    a.add_ground(168, GY - 3, 8, 5, tileset=1)
-    a.add_sprite(db.THWOMP, 172 * 16, (GY - 10) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 173 * 16, (GY - 4) * 16)
-    a.add_sprite(db.PARAGOOMBA, 170 * 16, (GY - 8) * 16)
+    a.add_ground(244, GY - 4, 6, 5, tileset=1)
+    a.add_sprite(db.THWOMP, 247 * 16, 8 * 16)
+    a.add_sprite(db.BUZZY_BEETLE, 245 * 16, (GY - 5) * 16)
 
-    a.add_ground(180, GY, 10, 5, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 183 * 16, (GY - 1) * 16)
-    a.add_sprite(db.THWOMP, 187 * 16, (GY - 8) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 186 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 188 * 16, (GY - 1) * 16)
+    a.add_ground(254, GY, 8, 5, tileset=1)
+    a.add_sprite(db.SLEDGE_BRO, 257 * 16, (GY - 1) * 16)
+    a.add_sprite(db.PARAGOOMBA, 259 * 16, (GY - 6) * 16)
 
-    a.add_ground(194, GY - 4, 6, 5, tileset=1)
-    a.add_sprite(db.THWOMP, 197 * 16, (GY - 11) * 16)
-    a.add_sprite(db.CHAIN_CHOMP, 198 * 16, (GY - 5) * 16)
+    a.add_ground(266, GY - 3, 5, 5, tileset=1)
+    a.add_sprite(db.THWOMP, 269 * 16, 8 * 16)
 
-    a.add_ground(204, GY, 10, 5, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 208 * 16, (GY - 1) * 16)
-    a.add_sprite(db.PARAGOOMBA, 211 * 16, (GY - 6) * 16)
-    a.add_sprite(db.PARAGOOMBA, 206 * 16, (GY - 6) * 16)
+    a.add_ground(275, GY, 6, 5, tileset=1)
+    a.add_sprite(db.BUZZY_BEETLE, 276 * 16, (GY - 1) * 16)
+    a.add_sprite(db.BUZZY_BEETLE, 279 * 16, (GY - 1) * 16)
 
-    # =======================================================================
-    # VINE CROSSING 2 (REQUIRED) — X 218-248
-    # Harder: tighter steps, Paragoombas near the vine, Thwomp at landing.
-    # Star Coin #2 on a high platform — must jump off vine at peak of swing.
-    # =======================================================================
-    a.add_ground(218, GY, 5, 5, tileset=1)
-    a.add_sprite(db.BUZZY_BEETLE, 220 * 16, (GY - 1) * 16)
+    a.add_ground(285, GY - 4, 6, 5, tileset=1)
+    a.add_sprite(db.THWOMP, 288 * 16, 8 * 16)
+    a.add_sprite(db.SLEDGE_BRO, 289 * 16, (GY - 5) * 16)
 
-    # Stepping stones — tight 2-tile platforms
-    a.add_ground(224, GY - 3, 2, 2, tileset=1)
-    a.add_ground(227, GY - 6, 2, 2, tileset=1)
-    a.add_sprite(db.PARAGOOMBA, 226 * 16, (GY - 9) * 16)
-
-    # Vine over wide chasm — must swing across
-    a.add_sprite(VINE, 231 * 16, (GY - 7) * 16)
-    a.add_sprite(db.PARAGOOMBA, 233 * 16, (GY - 5) * 16)
-
-    # Star Coin #2 — high platform, only reachable by jumping UP from vine peak
-    a.add_ground(233, GY - 12, 3, 2, tileset=1)
-    a.add_sprite(db.STAR_COIN, 234 * 16, (GY - 13) * 16, spritedata=bytes([0,0,0,0,1,0]))
-
-    # Landing — narrow with Thwomp directly above
-    a.add_ground(235, GY - 4, 3, 2, tileset=1)
-    a.add_sprite(db.THWOMP, 236 * 16, (GY - 11) * 16)
-
-    # Steps down through enemies
-    a.add_ground(239, GY - 2, 3, 2, tileset=1)
-    a.add_sprite(db.BUZZY_BEETLE, 240 * 16, (GY - 3) * 16)
-    a.add_ground(244, GY, 10, 5, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 248 * 16, (GY - 1) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 251 * 16, (GY - 1) * 16)
-
-    # =======================================================================
-    # SECTION C: Sledge Bro Stampede (X 258-360)
-    # Sledge Bros + Thwomps + Chain Chomps in quick succession
-    # =======================================================================
-    a.add_ground(258, GY - 3, 8, 5, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 262 * 16, (GY - 4) * 16)
-    a.add_sprite(db.THWOMP, 264 * 16, (GY - 10) * 16)
-
-    a.add_ground(270, GY, 10, 5, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 274 * 16, (GY - 1) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 277 * 16, (GY - 1) * 16)
-    a.add_sprite(db.PARAGOOMBA, 272 * 16, (GY - 6) * 16)
-    a.add_question_block(276, GY - 4, contents=0)
-
-    a.add_ground(284, GY - 4, 6, 5, tileset=1)
-    a.add_sprite(db.THWOMP, 287 * 16, (GY - 11) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 285 * 16, (GY - 5) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 288 * 16, (GY - 5) * 16)
-
-    a.add_ground(294, GY, 8, 5, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 297 * 16, (GY - 1) * 16)
+    # Chain Chomp arena
+    a.add_ground(295, GY, 12, 5, tileset=1)
     a.add_sprite(db.CHAIN_CHOMP, 299 * 16, (GY - 1) * 16)
-    a.add_coin_line(295, GY - 3, 3)
+    a.add_sprite(db.BUZZY_BEETLE, 301 * 16, (GY - 1) * 16)
+    a.add_sprite(db.PARAGOOMBA, 303 * 16, (GY - 6) * 16)
 
-    a.add_ground(306, GY - 3, 6, 5, tileset=1)
-    a.add_sprite(db.THWOMP, 309 * 16, (GY - 10) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 310 * 16, (GY - 4) * 16)
-    a.add_sprite(db.PARAGOOMBA, 307 * 16, (GY - 8) * 16)
+    # Vine 4 — final vine climb to goal
+    a.add_ground(311, 16, 3, 2, tileset=1)
+    a.add_sprite(464, 312 * 16, 16 * 16)
 
-    a.add_ground(316, GY, 10, 5, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 319 * 16, (GY - 1) * 16)
-    a.add_sprite(db.CHAIN_CHOMP, 323 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 321 * 16, (GY - 1) * 16)
+    a.add_ground(311, 10, 10, 3, tileset=1)
+    a.add_sprite(db.SLEDGE_BRO, 316 * 16, 9 * 16)
+    a.add_sprite(db.STAR_COIN, 314 * 16, 5 * 16, spritedata=bytes([0,0,0,0,0,2]))
 
-    a.add_ground(330, GY - 4, 6, 5, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 333 * 16, (GY - 5) * 16)
-    a.add_sprite(db.THWOMP, 334 * 16, (GY - 11) * 16)
-    a.add_sprite(db.KOOPA_PARATROOPA, 331 * 16, (GY - 9) * 16)
-
-    a.add_ground(340, GY, 10, 5, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 343 * 16, (GY - 1) * 16)
-    a.add_sprite(db.CHAIN_CHOMP, 347 * 16, (GY - 1) * 16)
-    a.add_sprite(db.PARAGOOMBA, 345 * 16, (GY - 6) * 16)
-
-    # =======================================================================
-    # VINE CROSSING 3 (REQUIRED) — X 354-390
-    # Hardest: smallest steps, enemies on steps, two Thwomps at landing,
-    # Sledge Bro guards the other side.
-    # Star Coin #3 is on a ledge below the landing — drop down to grab it.
-    # =======================================================================
-    a.add_ground(354, GY, 5, 5, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 356 * 16, (GY - 1) * 16)
-
-    # Tight stepping stones with enemies
-    a.add_ground(360, GY - 3, 2, 2, tileset=1)
-    a.add_sprite(db.BUZZY_BEETLE, 360 * 16, (GY - 4) * 16)
-    a.add_ground(363, GY - 6, 2, 2, tileset=1)
-    a.add_ground(367, GY - 8, 2, 2, tileset=1)
-    a.add_sprite(db.PARAGOOMBA, 365 * 16, (GY - 10) * 16)
-
-    # Vine over the final chasm
-    a.add_sprite(VINE, 371 * 16, (GY - 9) * 16)
-    a.add_sprite(db.PARAGOOMBA, 373 * 16, (GY - 7) * 16)
-
-    # Landing — guarded by double Thwomps and a Sledge Bro
-    a.add_ground(375, GY - 6, 4, 2, tileset=1)
-    a.add_sprite(db.THWOMP, 376 * 16, (GY - 13) * 16)
-    a.add_sprite(db.THWOMP, 378 * 16, (GY - 13) * 16)
-
-    # Star Coin #3 — ledge below landing, must drop down and walljump back
-    a.add_ground(380, GY + 1, 2, 2, tileset=1)
-    a.add_sprite(db.STAR_COIN, 380 * 16, GY * 16, spritedata=bytes([0,0,0,0,2,0]))
-
-    # Steps down from vine landing
-    a.add_ground(380, GY - 4, 3, 2, tileset=1)
-    a.add_ground(384, GY - 2, 3, 2, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 385 * 16, (GY - 3) * 16)
-
-    # =======================================================================
-    # SECTION D: Final Gauntlet + Goal (X 390-460)
-    # Everything at once — Chain Chomps, Thwomps, Sledge Bros
-    # =======================================================================
-    a.add_ground(390, GY, 12, 5, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 393 * 16, (GY - 1) * 16)
-    a.add_sprite(db.CHAIN_CHOMP, 398 * 16, (GY - 1) * 16)
-    a.add_sprite(db.PARAGOOMBA, 396 * 16, (GY - 6) * 16)
-
-    a.add_ground(406, GY - 3, 6, 5, tileset=1)
-    a.add_sprite(db.THWOMP, 409 * 16, (GY - 10) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 410 * 16, (GY - 4) * 16)
-
-    a.add_ground(416, GY, 10, 5, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 419 * 16, (GY - 1) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 423 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 421 * 16, (GY - 1) * 16)
-    a.add_sprite(db.THWOMP, 424 * 16, (GY - 8) * 16)
-
-    a.add_ground(430, GY - 4, 6, 5, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 433 * 16, (GY - 5) * 16)
-    a.add_sprite(db.PARAGOOMBA, 434 * 16, (GY - 9) * 16)
-
-    # Goal plateau
-    a.add_ground(440, GY, 30, 5, tileset=1)
-    a.add_sprite(db.GOAL_POLE, 458 * 16, (GY - 1) * 16)
-
+    a.add_ground(325, GY, 30, 5, tileset=1)
+    a.add_sprite(db.GOAL_POLE, 340 * 16, (GY - 1) * 16)
     builder.save("output/ChaosStation/Stage/06-01.arc")
     print("Created 06-01: Cliffside Stampede")
 
@@ -8656,7 +8577,7 @@ def create_level_6_2():
         a.add_sprite(db.FIRE_BAR, (fx + 3) * 16, (GY - 4) * 16, spritedata=fb_cw)
         a.add_sprite(db.BULLET_BILL_LAUNCHER, (fx + 8) * 16, (GY - 10) * 16)
 
-    a.add_sprite(db.STAR_COIN, 175 * 16, (GY - 12) * 16, spritedata=bytes([0,0,0,0,1,0]))
+    a.add_sprite(db.STAR_COIN, 175 * 16, (GY - 12) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
 
     a.add_ground(207, GY, 8, 6, tileset=1)
     a.add_sprite(db.HAMMER_BRO, 210 * 16, (GY - 1) * 16)
@@ -8668,7 +8589,7 @@ def create_level_6_2():
         a.add_sprite(db.BANZAI_BILL_LAUNCHER, (lx + lw + 3) * 16, (ly + 5) * 16)
 
     a.add_ground(260, GY + 8, 3, 3, tileset=1)
-    a.add_sprite(db.STAR_COIN, 261 * 16, (GY + 7) * 16, spritedata=bytes([0,0,0,0,2,0]))
+    a.add_sprite(db.STAR_COIN, 261 * 16, (GY + 7) * 16, spritedata=b'\x00\x00\x00\x02\x00\x00')
 
     a.add_ground(290, GY, 8, 6, tileset=1)
     a.add_sprite(db.HAMMER_BRO, 293 * 16, (GY - 1) * 16)
@@ -8684,49 +8605,11 @@ def create_level_6_2():
     a.add_ground(316, GY - 4, 6, 6, tileset=1)
     a.add_sprite(db.HAMMER_BRO, 318 * 16, (GY - 5) * 16)
 
-    # === SECTION D: Bill Storm (X 326-410) ===
-    # Nonstop Bullet Bills + Banzai Bills from both sides, tight platforms
-    a.add_ground(326, GY, 8, 6, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 329 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 338 * 16, (GY - 6) * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 338 * 16, (GY + 2) * 16)
+    a.add_ground(324, GY, 20, 6, tileset=1)
+    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 332 * 16, (GY - 1) * 16)
+    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 332 * 16, (GY + 5) * 16)
 
-    a.add_ground(338, GY - 5, 5, 6, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 340 * 16, (GY - 6) * 16)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 347 * 16, (GY - 10) * 16)
-
-    a.add_ground(346, GY, 6, 6, tileset=1)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 356 * 16, (GY - 4) * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 356 * 16, (GY + 3) * 16)
-    a.add_sprite(db.KOOPA_PARATROOPA, 349 * 16, (GY - 7) * 16)
-
-    a.add_ground(356, GY - 3, 5, 6, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 358 * 16, (GY - 4) * 16)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 365 * 16, (GY - 9) * 16)
-
-    a.add_ground(364, GY, 8, 6, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 367 * 16, (GY - 1) * 16)
-    a.add_sprite(db.FIRE_BAR, 370 * 16, (GY - 3) * 16, spritedata=fb_cw)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 376 * 16, (GY + 2) * 16)
-
-    a.add_ground(376, GY - 5, 5, 6, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 378 * 16, (GY - 6) * 16)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 385 * 16, (GY - 10) * 16)
-
-    a.add_ground(384, GY, 6, 6, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 386 * 16, (GY - 1) * 16)
-    a.add_sprite(db.PARAGOOMBA, 388 * 16, (GY - 7) * 16)
-
-    a.add_ground(394, GY - 4, 5, 6, tileset=1)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 404 * 16, (GY - 2) * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 404 * 16, (GY + 5) * 16)
-    a.add_sprite(db.KOOPA_PARATROOPA, 396 * 16, (GY - 9) * 16)
-
-    # Goal
-    a.add_ground(404, GY, 30, 6, tileset=1)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 418 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 418 * 16, (GY + 5) * 16)
-    a.add_sprite(db.GOAL_POLE, 420 * 16, (GY - 1) * 16)
+    a.add_sprite(db.GOAL_POLE, 336 * 16, (GY - 1) * 16)
     builder.save("output/ChaosStation/Stage/06-02.arc")
     print("Created 06-02: Bullet Bill Boulevard")
 
@@ -8753,8 +8636,8 @@ def create_level_6_3():
     a.add_entrance(1, 95 * 16, (GY - 1) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
     a.add_sprite(10, 3 * 16, (GY - 2) * 16)
 
-    # Toxic water pools — a few fill sprites, not one per tile
-    for wx in [0, 50, 100, 150, 200, 250, 300, 350]:
+    # Fill water beneath the level
+    for wx in range(0, 400, 8):
         a.add_sprite(db.POISON_FILL, wx * 16, WATER_Y * 16)
 
     # SECTION A: Ice Bridge Intro (X 14-90)
@@ -8803,13 +8686,11 @@ def create_level_6_3():
     a.add_sprite(db.ICE_BRO, 130 * 16, (GY - 4) * 16)
 
     # Star Coin #2 — between icicle drops, requires timing
-    a.add_sprite(db.STAR_COIN, 112 * 16, (GY - 8) * 16, spritedata=bytes([0,0,0,0,1,0]))
+    a.add_sprite(db.STAR_COIN, 112 * 16, (GY - 8) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
 
     a.add_ground(138, GY, 8, 5, tileset=1)
     a.add_sprite(db.DRY_BONES, 141 * 16, (GY - 1) * 16)
     a.add_sprite(db.DRY_BONES, 143 * 16, (GY - 1) * 16)
-    # Red coin ring — grab all 8 coins between icicle drops and Dry Bones
-    a.add_red_coin_ring(140, GY - 5, group_id=0x22, pattern='circle')
 
     # SECTION C: Frozen Pipe Maze (X 160-240)
     # Pipes shooting fire into icy platforms over water.
@@ -8832,7 +8713,7 @@ def create_level_6_3():
 
     # Star Coin #3 — above the pipe section, guarded
     a.add_ground(180, GY - 10, 3, 2, tileset=1)
-    a.add_sprite(db.STAR_COIN, 181 * 16, (GY - 11) * 16, spritedata=bytes([0,0,0,0,2,0]))
+    a.add_sprite(db.STAR_COIN, 181 * 16, (GY - 11) * 16, spritedata=b'\x00\x00\x00\x02\x00\x00')
 
     # SECTION D: Dry Bones Gauntlet (X 220-290)
     a.add_ground(204, GY, 12, 5, tileset=1)
@@ -8856,2243 +8737,103 @@ def create_level_6_3():
     a.add_sprite(db.DRY_BONES, 253 * 16, (GY - 1) * 16)
     a.add_sprite(db.ICE_BRO, 255 * 16, (GY - 1) * 16)
 
-    # SECTION E: Frozen Gauntlet (X 262-370)
-    # Fire pipes + icicles + Dry Bones on narrowing platforms over water
-    a.add_ground(262, GY - 3, 6, 5, tileset=1)
-    a.add_sprite(db.ICE_BRO, 264 * 16, (GY - 4) * 16)
-    a.add_sprite(db.ICICLE, 266 * 16, 8 * 16)
-
-    a.add_ground(272, GY, 10, 5, tileset=1)
-    a.add_sprite(db.PIPE_FIRE_PIRANHA_UP, 275 * 16, (GY - 1) * 16)
-    a.add_sprite(db.DRY_BONES, 278 * 16, (GY - 1) * 16)
-    a.add_sprite(db.DRY_BONES, 280 * 16, (GY - 1) * 16)
-    a.add_sprite(db.ICICLE, 277 * 16, 8 * 16)
-
-    a.add_ground(286, GY - 4, 5, 5, tileset=1)
-    a.add_sprite(db.ICE_BRO, 288 * 16, (GY - 5) * 16)
-    a.add_sprite(db.ICICLE, 289 * 16, 6 * 16)
-
-    a.add_ground(295, GY, 8, 5, tileset=1)
-    a.add_sprite(db.DRY_BONES, 297 * 16, (GY - 1) * 16)
-    a.add_sprite(db.PIPE_FIRE_PIRANHA_UP, 300 * 16, (GY - 1) * 16)
-    a.add_sprite(db.ICICLE, 298 * 16, 8 * 16)
-    a.add_sprite(db.ICICLE, 301 * 16, 8 * 16)
-    a.add_question_block(296, GY - 4, contents=3)
-
-    a.add_ground(307, GY - 3, 5, 5, tileset=1)
-    a.add_sprite(db.DRY_BONES, 309 * 16, (GY - 4) * 16)
-    a.add_sprite(db.ICE_BRO, 310 * 16, (GY - 4) * 16)
-
-    a.add_ground(316, GY, 6, 5, tileset=1)
-    a.add_sprite(db.DRY_BONES, 318 * 16, (GY - 1) * 16)
-    a.add_sprite(db.PIPE_FIRE_PIRANHA_UP, 320 * 16, (GY - 1) * 16)
-
-    a.add_ground(326, GY - 5, 5, 5, tileset=1)
-    a.add_sprite(db.ICE_BRO, 328 * 16, (GY - 6) * 16)
-    a.add_sprite(db.ICICLE, 329 * 16, 6 * 16)
-
-    a.add_ground(335, GY, 10, 5, tileset=1)
-    a.add_sprite(db.DRY_BONES, 337 * 16, (GY - 1) * 16)
-    a.add_sprite(db.DRY_BONES, 340 * 16, (GY - 1) * 16)
-    a.add_sprite(db.ICE_BRO, 342 * 16, (GY - 1) * 16)
-    a.add_sprite(db.ICICLE, 338 * 16, 8 * 16)
-    a.add_sprite(db.ICICLE, 341 * 16, 8 * 16)
-
-    a.add_ground(349, GY - 3, 5, 5, tileset=1)
-    a.add_sprite(db.DRY_BONES, 351 * 16, (GY - 4) * 16)
-    a.add_sprite(db.PIPE_FIRE_PIRANHA_UP, 352 * 16, (GY - 4) * 16)
-
     # Goal
-    a.add_ground(358, GY, 30, 5, tileset=1)
-    a.add_sprite(db.GOAL_POLE, 376 * 16, (GY - 1) * 16)
+    a.add_ground(262, GY, 30, 5, tileset=1)
+    a.add_sprite(db.GOAL_POLE, 280 * 16, (GY - 1) * 16)
     builder.save("output/ChaosStation/Stage/06-03.arc")
     print("Created 06-03: Frozen Depths")
 
 
 def create_level_6_4():
-    """06-04: Magma Crags — Volcanic cliff face with genuine height variation.
-    Section A: staircase ASCENT (GY -> GY-12 in four steps).
-    Section B: narrow ridge traverse at peak height.
-    Section C: staircase DESCENT back to ground.
-    Section D: lava COLUMN HOP — thin 2-3 tile pillars at alternating heights.
-    Section E: multi-level finale with upper/mid/lower paths simultaneously.
-    Completely different geometry from 6-3's flat ice platforms."""
+    """06-04: Frozen Maw — Ice cave."""
+    import tools.sprite_db as db
+    builder = LevelBuilder()
+    a = builder.add_area(1)
+    a.set_tileset(0, db.TILESET_STANDARD)
+    a.set_tileset(1, db.TILESET_SNOW)
+    a.set_background(bg2=db.BG_UNDERGROUND)
+    a.set_time(500)
+    a.add_zone(0, 0, 15000, 640, zone_id=0, music=db.MUSIC_SNOW, cam_mode=0, visibility=16)
+
+    GY = 26
+    a.add_ground(0, GY, 15, 5, tileset=1)
+    a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
+    a.add_sprite(10, 3 * 16, (GY - 2) * 16)
+
+    x = 18
+    while x < 300:
+        a.add_ground(x, GY, 12, 5, tileset=1)
+        a.add_sprite(db.CHAIN_CHOMP, (x + 6) * 16, (GY - 1) * 16)
+        a.add_ground(x + 2, GY - 8, 6, 2, tileset=1)
+        x += 20
+
+    a.add_ground(300, GY, 20, 5, tileset=1)
+    a.add_sprite(db.GOAL_POLE, 310 * 16, (GY - 1) * 16)
+    builder.save("output/ChaosStation/Stage/06-04.arc")
+    print("Created 06-04: Frozen Maw")
+
+
+def create_level_6_5():
+    """06-05: Vertigo Climb — Vertical autoscroll."""
     import tools.sprite_db as db
     builder = LevelBuilder()
     a = builder.add_area(1)
     a.set_tileset(0, db.TILESET_STANDARD)
     a.set_tileset(1, "Pa1_gake")
-    a.set_background(bg2=db.BG_CASTLE)
-    a.set_time(400)
-    a.add_zone(0, 0, 15000, 640, zone_id=0, music=db.MUSIC_CASTLE, cam_mode=0, visibility=16)
-
-    GY = 28   # base (differs from 6-3's GY=26 so even the ground feels different)
-    fb_cw  = b'\x00\x00\x00\x00\x10\x06'
-    fb_ccw = b'\x00\x00\x00\x00\x00\x06'
-
-    # === INTRO LEDGE (X 0-14) ===
-    a.add_ground(0, GY, 12, 5, tileset=1)
-    a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 85 * 16, (GY - 1) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-    a.add_sprite(10, 3 * 16, (GY - 2) * 16)
-    a.add_sprite(db.FIRE_BRO, 8 * 16, (GY - 1) * 16)
-    a.add_sprite(db.PARAGOOMBA, 10 * 16, (GY - 5) * 16)
-
-    # === SECTION A: The Ascent (X 16-58) ===
-    # Four staircase steps climbing UP the cliff face — each 4 tiles higher.
-    # Player must commit to climbing; there's no flat shortcut.
-    a.add_ground(16, GY - 4, 6, 5, tileset=1)       # step 1 — 4 up
-    a.add_sprite(db.HAMMER_BRO, 19 * 16, (GY - 5) * 16)
-    a.add_sprite(db.FIRE_BAR, 21 * 16, (GY - 10) * 16, spritedata=fb_cw)
-
-    a.add_ground(26, GY - 8, 5, 5, tileset=1)        # step 2 — 8 up
-    a.add_sprite(db.FIRE_BRO, 28 * 16, (GY - 9) * 16)
-    a.add_sprite(db.FIRE_BAR, 30 * 16, (GY - 14) * 16, spritedata=fb_ccw)
-
-    a.add_ground(35, GY - 12, 5, 5, tileset=1)       # step 3 — 12 up (first peak)
-    a.add_sprite(db.CHAIN_CHOMP, 38 * 16, (GY - 13) * 16)
-
-    # Star Coin #1 — on the first peak, Chain Chomp guards it
-    a.add_sprite(db.STAR_COIN, 37 * 16, (GY - 14) * 16, spritedata=bytes([0,0,0,0,0,0]))
-    a.add_sprite(db.FIRE_BAR, 37 * 16, (GY - 18) * 16, spritedata=fb_cw)
-
-    # === SECTION B: Ridge Traverse (X 44-70) ===
-    # Stay high! Narrow 2-3 tile ledges at GY-12, must hop between them.
-    # One slip and you're falling the full 12 tiles to death.
-    a.add_ground(44, GY - 12, 3, 2, tileset=1)       # narrow ridge 1
-    a.add_sprite(db.THWOMP, 45 * 16, (GY - 19) * 16)
-
-    a.add_ground(51, GY - 14, 3, 2, tileset=1)       # narrow ridge 2 — even higher
-    a.add_sprite(db.FIRE_BRO, 52 * 16, (GY - 15) * 16)
-    a.add_sprite(db.FIRE_BAR, 53 * 16, (GY - 20) * 16, spritedata=fb_ccw)
-
-    a.add_ground(58, GY - 11, 3, 2, tileset=1)       # narrow ridge 3 — step back down
-    a.add_sprite(db.PARAGOOMBA, 59 * 16, (GY - 15) * 16)
-
-    # === SECTION C: The Descent (X 65-100) ===
-    # Staircase back DOWN — narrower than the ascent, Thwomps at each step.
-    a.add_ground(65, GY - 8, 4, 4, tileset=1)        # step down to -8
-    a.add_sprite(db.THWOMP, 67 * 16, (GY - 15) * 16)
-    a.add_sprite(db.HAMMER_BRO, 68 * 16, (GY - 9) * 16)
-
-    a.add_ground(73, GY - 4, 4, 4, tileset=1)        # step down to -4
-    a.add_sprite(db.FIRE_BRO, 75 * 16, (GY - 5) * 16)
-    a.add_sprite(db.FIRE_BAR, 76 * 16, (GY - 10) * 16, spritedata=fb_cw)
-
-    a.add_ground(81, GY, 12, 5, tileset=1)            # back to ground — midway breather
-    a.add_sprite(db.MIDWAY_FLAG, 85 * 16, (GY - 1) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-    a.add_sprite(db.CHAIN_CHOMP, 89 * 16, (GY - 1) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 91 * 16, (GY - 1) * 16)
-    a.add_red_coin_ring(84, GY - 5, group_id=0x22, pattern='arc')
-
-    # === SECTION D: Lava Column Hop (X 97-155) ===
-    # Thin pillars (2-3 tiles wide) at ALTERNATING heights over lava pits.
-    # Heights cycle: GY, GY-6, GY-3, GY-9, GY-5, GY-2, GY-8, GY-4
-    # No two adjacent columns at the same height — constant up/down rhythm.
-    col_data = [
-        (97,  GY,     3),  # low
-        (104, GY - 6, 2),  # high jump up
-        (110, GY - 3, 3),  # medium
-        (116, GY - 9, 2),  # very high
-        (122, GY - 5, 3),  # medium-high
-        (128, GY - 2, 2),  # near-low
-        (134, GY - 8, 3),  # high
-        (140, GY - 4, 2),  # medium
-    ]
-    for i, (cx, cy, cw) in enumerate(col_data):
-        a.add_ground(cx, cy, cw, 5, tileset=1)
-        if i % 2 == 0:
-            a.add_sprite(db.FIRE_BRO, (cx + 1) * 16, (cy - 1) * 16)
-        else:
-            a.add_sprite(db.HAMMER_BRO, (cx + 1) * 16, (cy - 1) * 16)
-        if i % 3 == 0:
-            a.add_sprite(db.FIRE_BAR, (cx + 1) * 16, (cy - 6) * 16,
-                         spritedata=fb_cw if i % 2 == 0 else fb_ccw)
-
-    # Star Coin #2 — floating between columns at peak height (GY-10)
-    a.add_sprite(db.STAR_COIN, 117 * 16, (GY - 11) * 16, spritedata=bytes([0,0,0,0,1,0]))
-
-    # Reconvene on solid ground
-    a.add_ground(148, GY, 10, 5, tileset=1)
-    a.add_sprite(db.THWOMP, 152 * 16, (GY - 8) * 16)
-    a.add_sprite(db.CHAIN_CHOMP, 155 * 16, (GY - 1) * 16)
-
-    # === SECTION E: Multi-Level Finale (X 162-240) ===
-    # Three simultaneous paths at different heights — upper, mid, lower.
-    # Player picks a route; all converge at the goal.
-    # Upper path (GY-12): Hammer Bros, tight Fire Bars
-    a.add_ground(162, GY - 12, 5, 3, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 164 * 16, (GY - 13) * 16)
-    a.add_sprite(db.FIRE_BAR, 165 * 16, (GY - 18) * 16, spritedata=fb_cw)
-
-    a.add_ground(171, GY - 12, 4, 3, tileset=1)
-    a.add_sprite(db.FIRE_BRO, 173 * 16, (GY - 13) * 16)
-
-    # Mid path (GY-6): Chain Chomps + Fire Bars
-    a.add_ground(162, GY - 6, 6, 3, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 165 * 16, (GY - 7) * 16)
-    a.add_sprite(db.FIRE_BAR, 167 * 16, (GY - 12) * 16, spritedata=fb_ccw)
-
-    a.add_ground(172, GY - 6, 5, 3, tileset=1)
-    a.add_sprite(db.FIRE_BRO, 174 * 16, (GY - 7) * 16)
-    a.add_sprite(db.THWOMP, 176 * 16, (GY - 13) * 16)
-
-    # Lower path (GY): Sledge Bros, lava pits below
-    a.add_ground(163, GY, 7, 5, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 166 * 16, (GY - 1) * 16)
-    a.add_sprite(db.FIRE_BAR, 168 * 16, (GY - 6) * 16, spritedata=fb_cw)
-
-    a.add_ground(174, GY, 6, 5, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 176 * 16, (GY - 1) * 16)
-
-    # Star Coin #3 — only reachable from the lower path, guarded by Sledge Bro
-    a.add_ground(181, GY + 2, 3, 3, tileset=1)
-    a.add_sprite(db.STAR_COIN, 182 * 16, (GY + 1) * 16, spritedata=bytes([0,0,0,0,2,0]))
-    a.add_sprite(db.SLEDGE_BRO, 183 * 16, (GY + 1) * 16)
-
-    # All paths converge
-    a.add_ground(186, GY - 6, 6, 3, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 189 * 16, (GY - 7) * 16)
-    a.add_sprite(db.FIRE_BAR, 190 * 16, (GY - 12) * 16, spritedata=fb_ccw)
-
-    a.add_ground(196, GY, 10, 5, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 199 * 16, (GY - 1) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 203 * 16, (GY - 1) * 16)
-    a.add_sprite(db.THWOMP, 201 * 16, (GY - 8) * 16)
-    a.add_sprite(db.FIRE_BAR, 200 * 16, (GY - 6) * 16, spritedata=fb_cw)
-
-    # === GOAL ===
-    a.add_ground(210, GY, 28, 5, tileset=1)
-    a.add_sprite(db.GOAL_POLE, 228 * 16, (GY - 1) * 16)
-    builder.save("output/ChaosStation/Stage/06-04.arc")
-    print("Created 06-04: Magma Crags")
-
-
-def create_level_6_5():
-    """06-05: Abyssal Trench — Deep ocean gauntlet. Horizontal swim through
-    a sunken fortress. Mixes underwater swimming corridors with dry above-water
-    platform sections on fortress ruins poking out of the water.
-
-    Section A: Shore Approach — run along beach cliffs, descend into water.
-    Section B: Sunken Halls — fully submerged swim through ruined corridors.
-      Cheep Cheeps, Bloopers, Urchins on walls. Tight ceiling passages.
-    Section C: Air Pocket — brief dry section on ruins above waterline.
-      Hammer Bros on crumbling platforms with water below.
-    Section D: The Deep — dark deep swim. Fishbones track the player,
-      Blooper Nannies, Cheep Chomps pursue. Urchin mazes.
-    Section E: Ascent — swim upward through vertical shaft to dry goal."""
-    import tools.sprite_db as db
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_STANDARD)
-    a.set_tileset(1, db.TILESET_OCEAN)
-    a.set_background(bg2=db.BG_UNDERWATER)
+    a.set_background(bg2=db.BG_ATHLETIC_SKY_1)
     a.set_time(500)
-    a.add_zone(0, 0, 8000, 640, zone_id=0, music=db.MUSIC_UNDERWATER, cam_mode=0)
+    a.add_zone(0, 0, 1280, 10000, zone_id=0, music=db.MUSIC_ATHLETIC, cam_mode=3)
 
-    GY = 26   # ocean floor
-    WY = 12   # water surface Y (water fills from here down)
+    a.add_ground(0, 2, 80, 4, tileset=1)
+    a.add_entrance(0, 20 * 16, 5 * 16, etype=db.ENTRANCE_NORMAL)
+    a.add_sprite(10, 20 * 16, 5 * 16)
 
-    # Water fill — creates swim physics from WY downward
-    a.add_sprite(db.WATER_FILL, 0, WY * 16, spritedata=b"\x01\x00\x00\x00\x00\x00")
+    for y in range(8, 200, 20):
+        a.add_ground(10, y, 5, 5, tileset=1)
+        a.add_ground(60, y + 10, 5, 5, tileset=1)
+        a.add_sprite(db.THWOMP, 35 * 16, (y + 5) * 16)
+        a.add_sprite(db.KOOPA_PARATROOPA, 25 * 16, (y + 3) * 16)
 
-    # === SECTION A: Shore Approach (X 0-35) ===
-    # Player starts UNDERWATER already — low ceiling overhead from tile 0.
-    # Forced into water immediately, no open sky to breathe easy in.
-    a.add_ground(0, GY, 20, 6, tileset=1)           # shore/seabed platform
-    a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 152 * 16, (WY - 1) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-    a.add_sprite(10, 3 * 16, (GY - 2) * 16)
-    # Low ceiling even at spawn — can't swim up and over
-    a.add_ground(0, WY + 1, 35, 2, tileset=1)       # ceiling A (x=0-35)
-    a.add_sprite(db.SPINY_CHEEP_CHEEP, 8 * 16, (WY + 5) * 16)
-    a.add_sprite(db.SPINY_CHEEP_CHEEP, 14 * 16, (WY + 8) * 16)
-    a.add_sprite(db.CHEEP_CHEEP, 11 * 16, (WY + 6) * 16)
-
-    # Staircase descending into water
-    a.add_ground(20, GY + 2, 5, 4, tileset=1)
-    a.add_ground(25, GY + 4, 5, 4, tileset=1)
-    a.add_ground(30, GY + 6, 5, 4, tileset=1)       # submerged steps
-    a.add_sprite(db.SPINY_CHEEP_CHEEP, 26 * 16, (WY + 4) * 16)
-    a.add_sprite(db.CHEEP_CHEEP, 31 * 16, (WY + 7) * 16)
-
-    # Ocean floor begins
-    a.add_ground(35, GY + 8, 460, 4, tileset=1)     # long ocean floor
-
-    # ── CONTINUOUS CEILING — prevents swimming over everything ──
-    # Ceiling runs from x=0 to x=148 (Sections A+B), breaks for Air Pocket,
-    # then x=195 to x=345 (Section D). Player is always boxed in.
-    a.add_ground(35, WY + 1, 113, 2, tileset=1)     # ceiling B (x=35-148)
-    a.add_ground(195, WY + 1, 150, 2, tileset=1)    # ceiling D (x=195-345)
-
-    # === SECTION B: Sunken Halls (X 40-148) ===
-    # Trapped under the ceiling. Packed with enemies. No escape upward.
-
-    # Corridor 1 — Cheep Cheep swarm + Spiny Cheep Cheeps + Bloopers
-    a.add_sprite(db.CHEEP_CHEEP,       42 * 16, (WY + 5) * 16)
-    a.add_sprite(db.SPINY_CHEEP_CHEEP, 46 * 16, (WY + 8) * 16)
-    a.add_sprite(db.CHEEP_CHEEP,       50 * 16, (WY + 4) * 16)
-    a.add_sprite(db.SPINY_CHEEP_CHEEP, 54 * 16, (WY + 9) * 16)
-    a.add_sprite(db.CHEEP_CHEEP,       58 * 16, (WY + 6) * 16)
-    a.add_sprite(db.BLOOPER, 48 * 16, (WY + 6) * 16)
-    a.add_sprite(db.BLOOPER, 56 * 16, (WY + 4) * 16)
-
-    # Urchin wall #1 — pillar narrowing the passage
-    a.add_ground(62, WY + 3, 3, 5, tileset=1)       # upper pillar
-    a.add_ground(62, GY + 2, 3, 6, tileset=1)       # lower pillar
-    a.add_sprite(db.URCHIN, 63 * 16, (WY + 8) * 16)
-    a.add_sprite(db.URCHIN, 63 * 16, (GY + 1) * 16)
-
-    # Corridor 2 — Blooper Nanny + Spiny Cheeps closing in
-    a.add_sprite(db.BLOOPER_NANNY,     70 * 16, (WY + 5) * 16)
-    a.add_sprite(db.SPINY_CHEEP_CHEEP, 74 * 16, (WY + 9) * 16)
-    a.add_sprite(db.CHEEP_CHEEP,       78 * 16, (WY + 4) * 16)
-    a.add_sprite(db.SPINY_CHEEP_CHEEP, 82 * 16, (WY + 7) * 16)
-    a.add_sprite(db.FISHBONE, 76 * 16, (GY + 7) * 16)
-    a.add_sprite(db.BLOOPER, 85 * 16, (WY + 8) * 16)
-
-    # Star Coin #1 — floor alcove, tight squeeze to reach
-    a.add_ground(80, GY + 4, 4, 4, tileset=1)       # raised floor section
-    a.add_sprite(db.STAR_COIN, 81 * 16, (GY + 3) * 16, spritedata=bytes([0,0,0,0,0,0]))
-    a.add_sprite(db.URCHIN, 79 * 16, (GY + 5) * 16)
-    a.add_sprite(db.URCHIN, 84 * 16, (GY + 5) * 16)
-
-    # Urchin wall #2
-    a.add_ground(90, WY + 3, 3, 4, tileset=1)
-    a.add_ground(90, GY + 3, 3, 5, tileset=1)
-    a.add_sprite(db.URCHIN, 91 * 16, (WY + 7) * 16)
-    a.add_sprite(db.URCHIN, 91 * 16, (GY + 2) * 16)
-
-    # Urchin zigzag maze — alternating ceiling/floor urchins, dense
-    a.add_sprite(db.URCHIN, 96 * 16, (WY + 3) * 16)
-    a.add_sprite(db.URCHIN, 100 * 16, (GY + 7) * 16)
-    a.add_sprite(db.URCHIN, 104 * 16, (WY + 3) * 16)
-    a.add_sprite(db.URCHIN, 108 * 16, (GY + 7) * 16)
-    a.add_sprite(db.URCHIN, 112 * 16, (WY + 3) * 16)
-    a.add_sprite(db.URCHIN, 116 * 16, (GY + 7) * 16)
-    a.add_sprite(db.SPINY_CHEEP_CHEEP, 98 * 16, (WY + 7) * 16)
-    a.add_sprite(db.CHEEP_CHEEP,       106 * 16, (WY + 5) * 16)
-    a.add_sprite(db.SPINY_CHEEP_CHEEP, 114 * 16, (WY + 8) * 16)
-    a.add_sprite(db.FISHBONE, 102 * 16, (WY + 9) * 16)
-    a.add_sprite(db.FISHBONE, 110 * 16, (WY + 4) * 16)
-
-    # Ruined wall — two gaps, Fishbones on both sides
-    a.add_ground(122, WY + 3, 3, 5, tileset=1)
-    a.add_ground(122, GY + 2, 3, 6, tileset=1)
-    a.add_sprite(db.FISHBONE, 125 * 16, (WY + 8) * 16)
-    a.add_sprite(db.FISHBONE, 125 * 16, (GY + 1) * 16)
-    a.add_sprite(db.FISHBONE, 120 * 16, (WY + 6) * 16)
-
-    # Pre-air-pocket gauntlet — Big Cheep + Blooper Nanny
-    a.add_sprite(db.BIG_CHEEP_CHEEP, 130 * 16, (WY + 5) * 16)
-    a.add_sprite(db.BLOOPER_NANNY, 136 * 16, (WY + 7) * 16)
-    a.add_sprite(db.CHEEP_CHEEP, 133 * 16, (WY + 3) * 16)
-    a.add_sprite(db.CHEEP_CHEEP, 140 * 16, (WY + 9) * 16)
-    a.add_sprite(db.BLOOPER, 143 * 16, (WY + 5) * 16)
-
-    # === SECTION C: Air Pocket (X 148-195) ===
-    # NO CEILING here — fortress ruins poke above waterline. Brief dry section.
-    a.add_ground(148, WY, 20, 4, tileset=1)          # ruins platform (above water)
-    a.add_ground(148, GY + 8, 20, 4, tileset=1)      # seafloor beneath
-    a.add_sprite(db.HAMMER_BRO, 155 * 16, (WY - 1) * 16)
-    a.add_sprite(db.FIRE_BRO, 162 * 16, (WY - 1) * 16)
-    a.add_sprite(db.KOOPA, 158 * 16, (WY - 1) * 16)
-    a.add_sprite(db.MIDWAY_FLAG, 152 * 16, (WY - 1) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-    # Crumbling bridge over water — small platforms with gaps
-    a.add_ground(170, WY + 1, 3, 2, tileset=1)
-    a.add_ground(176, WY - 1, 3, 2, tileset=1)
-    a.add_ground(182, WY + 1, 3, 2, tileset=1)
-    a.add_sprite(db.CHEEP_CHEEP, 173 * 16, (WY + 4) * 16)
-    a.add_sprite(db.CHEEP_CHEEP, 179 * 16, (WY + 4) * 16)
-    a.add_sprite(db.CHEEP_CHEEP, 175 * 16, (WY + 7) * 16)
-    a.add_sprite(db.KOOPA_PARATROOPA, 178 * 16, (WY - 3) * 16)
-
-    # Star Coin #2 — under the crumbling bridge, guarded by Cheeps
-    a.add_sprite(db.STAR_COIN, 176 * 16, (WY + 5) * 16, spritedata=bytes([0,0,0,0,1,0]))
-    a.add_sprite(db.BLOOPER, 177 * 16, (WY + 8) * 16)
-
-    # Dive back in
-    a.add_ground(188, WY + 2, 5, 3, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 190 * 16, (WY + 1) * 16)
-
-    # === SECTION D: The Deep (X 195-345) ===
-    # Ceiling is back! Trapped underwater, increasingly dense enemies.
-
-    # Cheep Chomp zone — Boss Bass + spiny swarm (relentless chasers!)
-    a.add_sprite(db.CHEEP_CHOMP,       200 * 16, (WY + 6) * 16)
-    a.add_sprite(db.SPINY_CHEEP_CHEEP, 204 * 16, (WY + 3) * 16)
-    a.add_sprite(db.SPINY_CHEEP_CHEEP, 208 * 16, (WY + 9) * 16)
-    a.add_sprite(db.CHEEP_CHEEP,       212 * 16, (WY + 5) * 16)
-    a.add_sprite(db.FISHBONE, 216 * 16, (GY + 7) * 16)
-    a.add_sprite(db.FISHBONE, 210 * 16, (WY + 4) * 16)
-    a.add_sprite(db.BLOOPER, 206 * 16, (WY + 7) * 16)
-
-    # Pillar forest — tall pillars, tight gaps, urchins + enemies in gaps
-    for px in [222, 230, 238, 246, 254]:
-        a.add_ground(px, WY + 3, 2, 11, tileset=1)
-    a.add_sprite(db.URCHIN, 226 * 16, (WY + 5) * 16)
-    a.add_sprite(db.URCHIN, 226 * 16, (WY + 10) * 16)
-    a.add_sprite(db.URCHIN, 234 * 16, (WY + 7) * 16)
-    a.add_sprite(db.URCHIN, 242 * 16, (WY + 4) * 16)
-    a.add_sprite(db.URCHIN, 242 * 16, (WY + 11) * 16)
-    a.add_sprite(db.URCHIN, 250 * 16, (WY + 8) * 16)
-    a.add_sprite(db.BLOOPER_NANNY, 228 * 16, (WY + 6) * 16)
-    a.add_sprite(db.BLOOPER_NANNY, 248 * 16, (WY + 9) * 16)
-    a.add_sprite(db.FISHBONE, 236 * 16, (WY + 5) * 16)
-    a.add_sprite(db.FISHBONE, 244 * 16, (WY + 10) * 16)
-    a.add_sprite(db.CHEEP_CHEEP, 232 * 16, (WY + 9) * 16)
-    a.add_sprite(db.CHEEP_CHEEP, 240 * 16, (WY + 4) * 16)
-    a.add_sprite(db.CHEEP_CHEEP, 252 * 16, (WY + 7) * 16)
-
-    # Squeeze corridor — ceiling AND floor both tighten further
-    a.add_ground(260, WY + 3, 30, 2, tileset=1)     # extra low ceiling overlay
-    a.add_ground(260, GY + 4, 30, 4, tileset=1)     # raised floor
-    # ~5 tiles of swim space — extremely tight
-    a.add_sprite(db.SPINY_CHEEP_CHEEP, 264 * 16, (WY + 6) * 16)
-    a.add_sprite(db.CHEEP_CHEEP,       270 * 16, (WY + 8) * 16)
-    a.add_sprite(db.SPINY_CHEEP_CHEEP, 276 * 16, (WY + 5) * 16)
-    a.add_sprite(db.CHEEP_CHEEP,       282 * 16, (WY + 7) * 16)
-    a.add_sprite(db.FISHBONE, 268 * 16, (WY + 7) * 16)
-    a.add_sprite(db.FISHBONE, 280 * 16, (WY + 6) * 16)
-    a.add_sprite(db.URCHIN, 266 * 16, (WY + 5) * 16)
-    a.add_sprite(db.URCHIN, 274 * 16, (GY + 3) * 16)
-    a.add_sprite(db.URCHIN, 278 * 16, (WY + 5) * 16)
-    a.add_sprite(db.URCHIN, 286 * 16, (GY + 3) * 16)
-
-    # Red coin ring in the squeeze corridor
-    a.add_red_coin_ring(272, WY + 6, group_id=0x33, pattern='line')
-
-    # Post-squeeze — second Cheep Chomp + everything
-    a.add_sprite(db.CHEEP_CHOMP, 298 * 16, (WY + 7) * 16)
-    a.add_sprite(db.BLOOPER_NANNY, 304 * 16, (WY + 4) * 16)
-    a.add_sprite(db.BIG_CHEEP_CHEEP, 310 * 16, (WY + 8) * 16)
-    a.add_sprite(db.BIG_CHEEP_CHEEP, 318 * 16, (WY + 4) * 16)
-    a.add_sprite(db.FISHBONE, 308 * 16, (GY + 7) * 16)
-    a.add_sprite(db.FISHBONE, 314 * 16, (WY + 3) * 16)
-    a.add_sprite(db.FISHBONE, 322 * 16, (WY + 6) * 16)
-    a.add_sprite(db.CHEEP_CHEEP, 302 * 16, (WY + 9) * 16)
-    a.add_sprite(db.CHEEP_CHEEP, 316 * 16, (WY + 5) * 16)
-    a.add_sprite(db.BLOOPER, 320 * 16, (WY + 8) * 16)
-
-    # Star Coin #3 — floor trench, Urchins on both sides + Fishbone
-    a.add_ground(328, GY + 4, 3, 4, tileset=1)
-    a.add_ground(336, GY + 4, 3, 4, tileset=1)
-    a.add_sprite(db.STAR_COIN, 332 * 16, (GY + 7) * 16, spritedata=bytes([0,0,0,0,2,0]))
-    a.add_sprite(db.URCHIN, 329 * 16, (GY + 6) * 16)
-    a.add_sprite(db.URCHIN, 336 * 16, (GY + 6) * 16)
-    a.add_sprite(db.FISHBONE, 332 * 16, (GY + 4) * 16)
-
-    # === SECTION E: Ascent to Surface (X 345-400) ===
-    # Vertical shaft — ceiling finally opens. Walls on left and right.
-    # Urchins on walls, Fishbones darting across, Bloopers rising.
-    a.add_ground(345, WY, 3, 22, tileset=1)          # left wall
-    a.add_ground(365, WY, 3, 22, tileset=1)          # right wall
-    a.add_sprite(db.URCHIN, 348 * 16, (WY + 2) * 16)
-    a.add_sprite(db.URCHIN, 362 * 16, (WY + 5) * 16)
-    a.add_sprite(db.URCHIN, 348 * 16, (WY + 8) * 16)
-    a.add_sprite(db.URCHIN, 362 * 16, (WY + 11) * 16)
-    a.add_sprite(db.URCHIN, 348 * 16, (WY + 14) * 16)
-    a.add_sprite(db.URCHIN, 362 * 16, (WY + 17) * 16)
-    a.add_sprite(db.FISHBONE, 355 * 16, (WY + 4) * 16)
-    a.add_sprite(db.FISHBONE, 358 * 16, (WY + 9) * 16)
-    a.add_sprite(db.FISHBONE, 354 * 16, (WY + 15) * 16)
-    a.add_sprite(db.BLOOPER, 356 * 16, (WY + 7) * 16)
-    a.add_sprite(db.BLOOPER, 357 * 16, (WY + 13) * 16)
-    a.add_sprite(db.CHEEP_CHEEP, 352 * 16, (WY + 11) * 16)
-    a.add_sprite(db.CHEEP_CHEEP, 360 * 16, (WY + 6) * 16)
-
-    # Surface platform — emerge from water, run to goal
-    a.add_ground(370, WY - 2, 30, 4, tileset=1)     # dry land
-    a.add_sprite(db.HAMMER_BRO, 380 * 16, (WY - 3) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 390 * 16, (WY - 3) * 16)
-    a.add_sprite(db.GOAL_POLE, 394 * 16, (WY - 3) * 16)
-
+    a.add_sprite(db.GOAL_POLE, 35 * 16, 210 * 16)
     builder.save("output/ChaosStation/Stage/06-05.arc")
-    print("Created 06-05: Abyssal Trench")
+    print("Created 06-05: Vertigo Climb")
 
 
 def create_level_6_6():
-    """06-06: Fortress of Winds — Final W6 gauntlet on a fortress rampart.
-    Section A: Rampart Ascent — staircase up the fortress outer wall.
-    Section B: Battlement Walk — crenellation pattern (alternating high/low blocks)
-      with Bills firing through the gaps.
-    Section C: Interior Descent — drop INSIDE the fortress through enclosed rooms
-      with ceilings, Fire Bars, and Bros.
-    Section D: Watchtower Hop — tall narrow towers (2-3 wide, 8-10 tall) to hop across.
-    Section E: Final Rampart — wide fortress top with everything at once.
-    SECRET EXIT: In Section C Room 2, a hidden pipe in the ceiling leads to Area 2
-      — a treacherous underground passage ending with a red goal pole.
-    Completely different geometry from 6-2's flat bullet gauntlet."""
+    """06-06: Fortress of Winds."""
     import tools.sprite_db as db
     builder = LevelBuilder()
     a = builder.add_area(1)
     a.set_tileset(0, db.TILESET_STANDARD)
-    a.set_tileset(1, db.TILESET_CASTLE)   # castle brick — distinct from 6-2's cliff
-    a.set_background(bg2=db.BG_GHOST_HOUSE)  # dark night sky — not 6-2's bright athletic
+    a.set_tileset(1, "Pa1_gake")
+    a.set_background(bg2=db.BG_ATHLETIC_SKY_1)
     a.set_time(400)
-    a.add_zone(0, 0, 15000, 640, zone_id=0, music=db.MUSIC_CASTLE_BOSS, cam_mode=0, visibility=16)
+    a.add_zone(0, 0, 15000, 640, zone_id=0, music=db.MUSIC_ATHLETIC, cam_mode=0, visibility=16)
 
     GY = 30
-    fb_cw  = b'\x00\x00\x00\x00\x10\x07'
-    fb_ccw = b'\x00\x00\x00\x00\x00\x07'
-
-    # === INTRO: Fortress Gate (X 0-16) ===
-    a.add_ground(0, GY, 14, 6, tileset=1)
+    a.add_ground(0, GY, 15, 6, tileset=1)
     a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
     a.add_sprite(10, 3 * 16, (GY - 2) * 16)
-    a.add_sprite(db.KOOPA, 10 * 16, (GY - 1) * 16)
-    a.add_sprite(db.PARAGOOMBA, 12 * 16, (GY - 5) * 16)
 
-    # === SECTION A: Rampart Ascent (X 18-72) ===
-    # Staircase UP the fortress exterior wall — 5 steps, each 3 tiles higher.
-    # Bills fire horizontally across each gap. Player climbs under fire.
-    a.add_ground(18, GY - 3, 6, 6, tileset=1)        # step 1
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 28 * 16, (GY - 5) * 16)
-    a.add_sprite(db.HAMMER_BRO, 21 * 16, (GY - 4) * 16)
+    x = 20
+    while x < 300:
+        a.add_ground(x, GY, 15, 6, tileset=1)
+        a.add_sprite(db.BULLET_BILL_LAUNCHER, (x + 8) * 16, (GY - 6) * 16)
+        a.add_sprite(db.SLEDGE_BRO, (x + 4) * 16, (GY - 1) * 16)
+        x += 25
 
-    a.add_ground(28, GY - 6, 6, 6, tileset=1)        # step 2
-    a.add_sprite(db.SLEDGE_BRO, 31 * 16, (GY - 7) * 16)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 38 * 16, (GY - 8) * 16)
-
-    a.add_ground(38, GY - 9, 6, 6, tileset=1)        # step 3
-    a.add_sprite(db.FIRE_BAR, 41 * 16, (GY - 14) * 16, spritedata=fb_cw)
-    a.add_sprite(db.HAMMER_BRO, 42 * 16, (GY - 10) * 16)
-
-    a.add_ground(48, GY - 12, 6, 6, tileset=1)       # step 4
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 58 * 16, (GY - 14) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 51 * 16, (GY - 13) * 16)
-
-    a.add_ground(58, GY - 15, 8, 6, tileset=1)       # step 5 — fortress top!
-    a.add_sprite(db.SLEDGE_BRO, 62 * 16, (GY - 16) * 16)
-    a.add_sprite(db.FIRE_BAR, 64 * 16, (GY - 21) * 16, spritedata=fb_ccw)
-
-    # === SECTION B: Battlement Walk (X 70-140) ===
-    # Crenellation pattern — alternating tall merlons (3 wide, at GY-15)
-    # and low embrasures (3 wide, at GY-12). Bills fire through embrasure gaps.
-    # Merlon
-    a.add_ground(70, GY - 15, 4, 3, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 72 * 16, (GY - 16) * 16)
-    # Embrasure (lower)
-    a.add_ground(78, GY - 12, 4, 3, tileset=1)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 85 * 16, (GY - 14) * 16)
-    a.add_sprite(db.KOOPA_PARATROOPA, 80 * 16, (GY - 16) * 16)
-    # Merlon
-    a.add_ground(86, GY - 15, 4, 3, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 88 * 16, (GY - 16) * 16)
-    a.add_sprite(db.FIRE_BAR, 89 * 16, (GY - 21) * 16, spritedata=fb_cw)
-    # Embrasure
-    a.add_ground(94, GY - 12, 4, 3, tileset=1)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 102 * 16, (GY - 14) * 16)
-
-    # Star Coin #1 — dangling BELOW the embrasure into the open sky
-    a.add_ground(96, GY - 8, 2, 2, tileset=1)
-    a.add_sprite(db.STAR_COIN, 96 * 16, (GY - 9) * 16, spritedata=bytes([0,0,0,0,0,0]))
-
-    # Merlon
-    a.add_ground(102, GY - 15, 4, 3, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 104 * 16, (GY - 16) * 16)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 110 * 16, (GY - 17) * 16)
-    # Embrasure
-    a.add_ground(110, GY - 12, 4, 3, tileset=1)
-    a.add_sprite(db.FIRE_BAR, 112 * 16, (GY - 18) * 16, spritedata=fb_ccw)
-    # Merlon — midway
-    a.add_ground(118, GY - 15, 6, 3, tileset=1)
-    a.add_sprite(db.MIDWAY_FLAG, 120 * 16, (GY - 16) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-    a.add_sprite(db.SLEDGE_BRO, 122 * 16, (GY - 16) * 16)
-    # Last embrasure
-    a.add_ground(128, GY - 12, 4, 3, tileset=1)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 136 * 16, (GY - 14) * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 136 * 16, (GY - 8) * 16)
-
-    # === SECTION C: Interior Descent (X 136-200) ===
-    # Drop DOWN inside the fortress — enclosed rooms with ceilings above.
-    # Each room is a platform with a ceiling 5 tiles above it, creating tight spaces.
-    # Room 1 — enter from the top of the battlement
-    a.add_ground(136, GY - 15, 3, 2, tileset=1)       # drop-in ledge
-    a.add_ground(136, GY - 9, 10, 3, tileset=1)       # floor
-    a.add_ground(136, GY - 14, 10, 2, tileset=1)      # ceiling above
-    a.add_sprite(db.FIRE_BAR, 140 * 16, (GY - 12) * 16, spritedata=fb_cw)
-    a.add_sprite(db.HAMMER_BRO, 143 * 16, (GY - 10) * 16)
-
-    # Room 2 — drop further down
-    a.add_ground(150, GY - 4, 10, 3, tileset=1)       # floor
-    a.add_ground(150, GY - 9, 10, 2, tileset=1)       # ceiling
-    a.add_sprite(db.SLEDGE_BRO, 154 * 16, (GY - 5) * 16)
-    a.add_sprite(db.FIRE_BAR, 157 * 16, (GY - 7) * 16, spritedata=fb_ccw)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 163 * 16, (GY - 6) * 16)
-
-    # Star Coin #2 — hidden in a ceiling pocket between rooms
-    a.add_ground(163, GY - 11, 3, 2, tileset=1)       # tiny nook platform
-    a.add_sprite(db.STAR_COIN, 164 * 16, (GY - 12) * 16, spritedata=bytes([0,0,0,0,1,0]))
-
-    # Room 3 — back to ground level (lowest room)
-    a.add_ground(164, GY, 10, 6, tileset=1)           # floor
-    a.add_ground(164, GY - 5, 10, 2, tileset=1)       # ceiling
-    a.add_sprite(db.CHAIN_CHOMP, 168 * 16, (GY - 1) * 16)
-    a.add_sprite(db.FIRE_BAR, 171 * 16, (GY - 3) * 16, spritedata=fb_cw)
-    a.add_sprite(db.HAMMER_BRO, 172 * 16, (GY - 1) * 16)
-
-    # Emerge from interior
-    a.add_ground(178, GY, 8, 6, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 182 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 190 * 16, (GY + 2) * 16)
-    # Red coin ring — grab coins while emerging from fortress interior
-    a.add_red_coin_ring(180, GY - 5, group_id=0x22, pattern='wave')
-
-    # === SECTION D: Watchtower Hop (X 190-260) ===
-    # Tall narrow towers — 2-3 tiles wide but 8-10 tiles tall.
-    # Player runs along the TOP of each tower. Gaps between are death.
-    # Tower 1
-    a.add_ground(190, GY - 8, 3, 10, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 191 * 16, (GY - 9) * 16)
-    a.add_sprite(db.FIRE_BAR, 191 * 16, (GY - 14) * 16, spritedata=fb_cw)
-
-    # Tower 2 — taller
-    a.add_ground(198, GY - 12, 3, 14, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 199 * 16, (GY - 13) * 16)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 205 * 16, (GY - 14) * 16)
-
-    # Tower 3 — shorter
-    a.add_ground(206, GY - 6, 2, 8, tileset=1)
-    a.add_sprite(db.KOOPA_PARATROOPA, 207 * 16, (GY - 10) * 16)
-
-    # SECRET EXIT: In the pit between Tower 3 and Tower 4 — looks like death
-    # but there's a tiny ledge at the bottom with a pipe going underground.
-    # Player must intentionally drop into the gap and land precisely.
-    a.add_ground(208, GY, 5, 2, tileset=1)            # hidden ledge at pit bottom
-    a.add_pipe(209, GY - 2, height=2, tileset=0)      # the secret pipe
-    a.add_entrance(1, x=209 * 16 + 8, y=(GY - 2) * 16, etype=2,
-                   zone_id=0, dest_area=2, dest_entrance=0)
-
-    # Tower 4 — tallest
-    a.add_ground(213, GY - 14, 3, 16, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 214 * 16, (GY - 15) * 16)
-    a.add_sprite(db.FIRE_BAR, 215 * 16, (GY - 20) * 16, spritedata=fb_ccw)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 220 * 16, (GY - 16) * 16)
-
-    # Tower 5 — medium
-    a.add_ground(221, GY - 10, 3, 12, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 222 * 16, (GY - 11) * 16)
-
-    # Star Coin #3 — floating between tower 4 and 5, must jump from tower 4's peak
-    a.add_sprite(db.STAR_COIN, 218 * 16, (GY - 16) * 16, spritedata=bytes([0,0,0,0,2,0]))
-
-    # Tower 6 — short, leads to finale
-    a.add_ground(229, GY - 6, 3, 8, tileset=1)
-    a.add_sprite(db.FIRE_BAR, 230 * 16, (GY - 12) * 16, spritedata=fb_cw)
-    a.add_sprite(db.PARAGOOMBA, 231 * 16, (GY - 10) * 16)
-
-    # === SECTION E: Final Rampart (X 236-310) ===
-    # Wide fortress top — everything at once. Broad platforms but swarming enemies.
-    a.add_ground(236, GY - 4, 14, 6, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 240 * 16, (GY - 5) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 245 * 16, (GY - 5) * 16)
-    a.add_sprite(db.FIRE_BAR, 243 * 16, (GY - 9) * 16, spritedata=fb_cw)
-    a.add_sprite(db.FIRE_BAR, 248 * 16, (GY - 9) * 16, spritedata=fb_ccw)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 254 * 16, (GY - 6) * 16)
-
-    a.add_ground(254, GY, 6, 6, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 256 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 258 * 16, (GY - 6) * 16)
-
-    a.add_ground(264, GY - 7, 10, 6, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 267 * 16, (GY - 8) * 16)
-    a.add_sprite(db.CHAIN_CHOMP, 271 * 16, (GY - 8) * 16)
-    a.add_sprite(db.FIRE_BAR, 269 * 16, (GY - 13) * 16, spritedata=fb_cw)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 278 * 16, (GY - 9) * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 278 * 16, (GY - 3) * 16)
-
-    a.add_ground(278, GY, 12, 6, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 282 * 16, (GY - 1) * 16)
-    a.add_sprite(db.FIRE_BAR, 285 * 16, (GY - 5) * 16, spritedata=fb_ccw)
-    a.add_sprite(db.HAMMER_BRO, 287 * 16, (GY - 1) * 16)
-
-    # === GOAL ===
-    a.add_ground(294, GY, 30, 6, tileset=1)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 308 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 308 * 16, (GY + 5) * 16)
-    a.add_sprite(db.GOAL_POLE, 312 * 16, (GY - 1) * 16)
-
-    # ══════════ AREA 2: SECRET EXIT — Fortress Dungeon ══════════
-    # A dark underground passage beneath the fortress. Tight corridors,
-    # Fire Bars everywhere, Chain Chomps guarding the red goal pole.
-    a2 = builder.add_area(2)
-    a2.set_tileset(1, db.TILESET_CAVE)
-    a2.set_background(bg2=db.BG_UNDERGROUND)
-    a2.set_time(200)
-    a2.add_zone(0, 0, 4000, 480, zone_id=0, music=db.MUSIC_UNDERGROUND,
-                cam_mode=0, visibility=36)
-
-    SY = 22  # secret area ground Y
-    # Entrance from pipe
-    a2.add_ground(0, SY, 8, 6, tileset=1)
-    a2.add_entrance(0, 3 * 16, (SY - 2) * 16, etype=0)
-    a2.add_ground(0, SY - 7, 8, 2, tileset=1)   # ceiling
-
-    # Corridor 1: Fire Bar gauntlet in tight ceiling room
-    a2.add_ground(8, SY, 16, 6, tileset=1)
-    a2.add_ground(8, SY - 7, 16, 2, tileset=1)   # ceiling
-    a2.add_sprite(db.FIRE_BAR, 12 * 16, (SY - 4) * 16, spritedata=fb_cw)
-    a2.add_sprite(db.FIRE_BAR, 20 * 16, (SY - 4) * 16, spritedata=fb_ccw)
-    a2.add_sprite(db.DRY_BONES, 15 * 16, (SY - 1) * 16)
-
-    # Corridor 2: Chain Chomp alley — open ceiling, two chomps lunging
-    a2.add_ground(28, SY, 14, 6, tileset=1)
-    a2.add_sprite(db.CHAIN_CHOMP, 32 * 16, (SY - 1) * 16)
-    a2.add_sprite(db.CHAIN_CHOMP, 38 * 16, (SY - 1) * 16)
-    a2.add_sprite(db.FIRE_BAR, 35 * 16, (SY - 6) * 16, spritedata=fb_cw)
-
-    # Corridor 3: Elevated platform gauntlet with Thwomps
-    a2.add_ground(46, SY + 2, 4, 4, tileset=1)
-    a2.add_ground(54, SY - 1, 4, 4, tileset=1)
-    a2.add_ground(62, SY + 1, 4, 4, tileset=1)
-    a2.add_sprite(db.THWOMP, 48 * 16, (SY - 5) * 16)
-    a2.add_sprite(db.THWOMP, 56 * 16, (SY - 7) * 16)
-    a2.add_sprite(db.THWOMP, 64 * 16, (SY - 5) * 16)
-
-    # Corridor 4: Final room — Sledge Bro + Fire Bars guard the red pole
-    a2.add_ground(70, SY, 20, 6, tileset=1)
-    a2.add_ground(70, SY - 8, 20, 2, tileset=1)   # ceiling
-    a2.add_sprite(db.SLEDGE_BRO, 74 * 16, (SY - 1) * 16)
-    a2.add_sprite(db.HAMMER_BRO, 78 * 16, (SY - 1) * 16)
-    a2.add_sprite(db.FIRE_BAR, 76 * 16, (SY - 5) * 16, spritedata=fb_ccw)
-    a2.add_sprite(db.FIRE_BAR, 82 * 16, (SY - 5) * 16, spritedata=fb_cw)
-
-    # Red Goal Pole — secret exit!
-    a2.add_sprite(db.GOAL_POLE, 86 * 16, (SY - 1) * 16,
-                  spritedata=bytes([0, 0, 16, 0, 0, 0]))
-    # Long platform after the pole — Mario needs ~15 tiles for victory walk
-    a2.add_ground(90, SY, 20, 6, tileset=1)
-
+    a.add_ground(300, GY, 20, 6, tileset=1)
+    a.add_sprite(db.GOAL_POLE, 310 * 16, (GY - 1) * 16)
     builder.save("output/ChaosStation/Stage/06-06.arc")
-    print("Created 06-06: Fortress of Winds (+ secret exit)")
-
-
-# ╔══════════════════════════════════════════════════════════════════════╗
-# ║                     WORLD 7 — SKYFALL DOMAIN                       ║
-# ╚══════════════════════════════════════════════════════════════════════╝
-
-def create_level_7_1():
-    """07-01: Cloud Rush — Sky world introduction. Ascending cloud platforms
-    over bottomless pits. Falling platforms, Lakitu, Paragoombas.
-    Geometry: wide plateaus that gradually narrow + ascending staircase."""
-    import tools.sprite_db as db
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_STANDARD)
-    a.set_tileset(1, db.TILESET_GRASS)
-    a.set_background(bg2=db.BG_ATHLETIC_SKY_1)
-    a.set_time(400)
-    a.add_zone(0, 0, 7200, 640, zone_id=0, music=db.MUSIC_SKY, cam_mode=0, visibility=16)
-
-    GY = 28
-
-    # === SECTION A: Safe Introduction (X 0-55) ===
-    # Wide starting platform — eases player into sky world.
-    a.add_ground(0, GY, 18, 6, tileset=1)
-    a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 128 * 16, (GY - 3) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-    a.add_sprite(10, 3 * 16, (GY - 2) * 16)
-    a.add_sprite(db.GOOMBA, 10 * 16, (GY - 1) * 16)
-    a.add_sprite(db.KOOPA, 14 * 16, (GY - 1) * 16)
-    a.add_question_block(8, GY - 4, contents=1)  # mushroom
-
-    # Gap + coin trail → second platform
-    a.add_coin_line(20, GY - 3, 4)
-    a.add_ground(24, GY, 14, 6, tileset=1)
-    a.add_sprite(db.PARAGOOMBA, 28 * 16, (GY - 5) * 16)
-    a.add_sprite(db.PARAGOOMBA, 33 * 16, (GY - 4) * 16)
-    a.add_sprite(db.KOOPA, 30 * 16, (GY - 1) * 16)
-
-    # Third platform — slightly higher (ascending trend begins)
-    a.add_ground(42, GY - 2, 12, 6, tileset=1)
-    a.add_sprite(db.KOOPA_PARATROOPA, 46 * 16, (GY - 6) * 16)
-
-    # === SECTION B: Falling Platform Gauntlet (X 58-130) ===
-    # Donut blocks over void, interspersed with small solid platforms.
-    a.add_ground(58, GY - 3, 6, 4, tileset=1)         # landing pad
-    a.add_sprite(db.FALLING_PLATFORM, 66 * 16, (GY - 3) * 16)
-    a.add_sprite(db.FALLING_PLATFORM, 72 * 16, (GY - 4) * 16)
-    a.add_ground(78, GY - 5, 5, 4, tileset=1)
-    a.add_sprite(db.PARAGOOMBA, 70 * 16, (GY - 7) * 16)
-    a.add_sprite(db.PARAGOOMBA, 76 * 16, (GY - 8) * 16)
-
-    # Star Coin #1 — below a falling platform, must ride it down briefly
-    a.add_sprite(db.STAR_COIN, 72 * 16, (GY + 1) * 16,
-                 spritedata=bytes([0,0,0,0,0,0]))
-
-    a.add_sprite(db.FALLING_PLATFORM, 85 * 16, (GY - 5) * 16)
-    a.add_sprite(db.FALLING_PLATFORM, 91 * 16, (GY - 6) * 16)
-    a.add_ground(97, GY - 6, 5, 4, tileset=1)
-
-    # Lakitu enters!
-    a.add_sprite(db.LAKITU, 100 * 16, (GY - 14) * 16)
-
-    a.add_sprite(db.FALLING_PLATFORM, 104 * 16, (GY - 7) * 16)
-    a.add_sprite(db.FALLING_PLATFORM, 110 * 16, (GY - 5) * 16)
-    a.add_ground(116, GY - 4, 6, 4, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 118 * 16, (GY - 5) * 16)
-
-    # === SECTION C: Cloud Staircase (X 126-210) ===
-    # Ascending platforms in a zigzag — each higher than the last.
-    a.add_ground(126, GY - 2, 8, 4, tileset=1)
-    a.add_sprite(db.MIDWAY_FLAG, 128 * 16, (GY - 3) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-    # Zigzag ascent — platforms alternate left-right, climbing
-    a.add_ground(138, GY - 5, 5, 3, tileset=1)
-    a.add_sprite(db.KOOPA_PARATROOPA, 140 * 16, (GY - 9) * 16)
-    a.add_sprite(db.CROWBER, 143 * 16, (GY - 8) * 16)    # dive-bomb crow!
-    a.add_ground(147, GY - 8, 5, 3, tileset=1)
-    a.add_sprite(db.WIGGLER, 149 * 16, (GY - 9) * 16)    # angry caterpillar
-    a.add_sprite(db.CROWBER, 153 * 16, (GY - 11) * 16)
-    a.add_ground(156, GY - 11, 5, 3, tileset=1)
-    a.add_sprite(db.PARAGOOMBA, 158 * 16, (GY - 14) * 16)
-    a.add_sprite(db.FIRE_BRO, 159 * 16, (GY - 12) * 16)
-    a.add_ground(165, GY - 14, 5, 3, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 167 * 16, (GY - 15) * 16)
-    a.add_sprite(db.CHAIN_CHOMP, 169 * 16, (GY - 15) * 16)  # chained beast on top step!
-
-    # Star Coin #2 — high above the staircase, need Paratroopa bounce
-    a.add_sprite(db.STAR_COIN, 148 * 16, (GY - 15) * 16,
-                 spritedata=bytes([0,0,0,0,1,0]))
-
-    # Red coin ring arc across the staircase
-    a.add_red_coin_ring(160, GY - 12, group_id=0x70, pattern='arc')
-
-    # Descend back down via wider platforms
-    a.add_ground(174, GY - 10, 7, 4, tileset=1)
-    a.add_sprite(db.KOOPA_PARATROOPA, 178 * 16, (GY - 14) * 16)
-    a.add_ground(185, GY - 6, 7, 4, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 188 * 16, (GY - 7) * 16)
-    a.add_ground(196, GY - 2, 8, 4, tileset=1)
-    a.add_sprite(db.WIGGLER, 199 * 16, (GY - 3) * 16)    # Wiggler on descent
-
-    # === SECTION D: Crowber Gauntlet (X 210-310) ===
-    # Narrow platforms. Crowbers dive from above. Amp rings guard gaps.
-    a.add_sprite(db.LAKITU, 215 * 16, (GY - 14) * 16)   # second Lakitu!
-    a.add_ground(210, GY - 1, 4, 4, tileset=1)
-    a.add_sprite(db.CROWBER, 212 * 16, (GY - 5) * 16)    # dive-bomb crow
-    a.add_ground(220, GY - 3, 3, 3, tileset=1)
-    a.add_sprite(db.KOOPA_PARATROOPA, 221 * 16, (GY - 7) * 16)
-    a.add_sprite(db.FIRE_BRO, 222 * 16, (GY - 4) * 16)
-    a.add_ground(229, GY, 4, 4, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 231 * 16, (GY - 1) * 16)  # Chain Chomp!
-    a.add_ground(239, GY - 4, 3, 3, tileset=1)
-    a.add_sprite(db.CROWBER, 240 * 16, (GY - 8) * 16)
-    a.add_sprite(db.AMP, 244 * 16, (GY - 2) * 16)        # Amp in the gap
-    a.add_ground(248, GY - 1, 3, 3, tileset=1)
-    a.add_sprite(db.WIGGLER, 249 * 16, (GY - 2) * 16)    # Wiggler on tiny platform
-    a.add_ground(257, GY - 3, 4, 3, tileset=1)
-    a.add_sprite(db.FIRE_BRO, 259 * 16, (GY - 4) * 16)
-    a.add_sprite(db.AMP, 263 * 16, (GY - 1) * 16)        # Amp in gap
-    a.add_ground(267, GY, 3, 3, tileset=1)
-    a.add_sprite(db.CROWBER, 268 * 16, (GY - 4) * 16)
-    a.add_ground(276, GY - 5, 3, 3, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 277 * 16, (GY - 6) * 16)
-    a.add_ground(285, GY - 2, 4, 3, tileset=1)
-    a.add_sprite(db.BRAMBALL, 287 * 16, (GY - 3) * 16)   # Spiked ball rolling!
-
-    # Star Coin #3 — below the narrow path, in the void between two platforms
-    a.add_sprite(db.STAR_COIN, 240 * 16, (GY + 3) * 16,
-                 spritedata=bytes([0,0,0,0,2,0]))
-
-    # === SECTION E: Goal Run (X 300-360) ===
-    a.add_ground(300, GY, 4, 4, tileset=1)
-    a.add_ground(308, GY - 2, 6, 4, tileset=1)
-    a.add_ground(318, GY, 30, 6, tileset=1)
-    a.add_sprite(db.GOAL_POLE, 340 * 16, (GY - 1) * 16)
-
-    builder.save("output/ChaosStation/Stage/07-01.arc")
-    print("Created 07-01: Cloud Rush")
-
-
-def create_level_7_2():
-    """07-02: Gale Force Gauntlet — Grassy floating islands at wildly varying
-    heights. Slopes on every island, Paratroopa bounce chains across chasms.
-    Geometry: scattered islands at RANDOM heights (not linear)."""
-    import tools.sprite_db as db
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_STANDARD)
-    a.set_tileset(1, db.TILESET_GRASS)
-    a.set_background(bg2=db.BG_GRASS_SKY)
-    a.set_time(400)
-    a.add_zone(0, 0, 7500, 640, zone_id=0, music=db.MUSIC_OVERWORLD, cam_mode=0, visibility=16)
-
-    # Islands at varying heights — each one a unique shape
-    # GY varies per island to create a scatter-plot feel
-
-    # === ISLAND 1: Starting Island (flat, wide) ===
-    a.add_ground(0, 26, 16, 6, tileset=1)
-    a.add_entrance(0, 3 * 16, 24 * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 98 * 16, 23 * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-    a.add_sprite(10, 3 * 16, 24 * 16)
-    a.add_sprite(db.GOOMBA, 8 * 16, 25 * 16)
-    a.add_sprite(db.KOOPA, 12 * 16, 25 * 16)
-    a.add_question_block(6, 22, contents=9)   # Mini Mushroom!
-
-    # === ISLAND 2: High narrow peak (Y=20) ===
-    a.add_ground(22, 20, 4, 3, tileset=1)
-    a.add_ground(26, 22, 3, 3, tileset=1)    # slope down right
-    a.add_sprite(db.PARAGOOMBA, 24 * 16, 16 * 16)
-
-    # === ISLAND 3: Low wide shelf (Y=30) ===
-    a.add_ground(35, 30, 10, 4, tileset=1)
-    a.add_sprite(db.KOOPA_PARATROOPA, 39 * 16, 26 * 16)
-    a.add_sprite(db.KOOPA, 42 * 16, 29 * 16)
-
-    # === ISLAND 4: Tall column (Y=16, very high) ===
-    a.add_ground(51, 16, 3, 12, tileset=1)
-    a.add_sprite(db.FIRE_BRO, 52 * 16, 15 * 16)
-
-    # === ISLAND 5: Staircase island (Y=24, ascending left to right) ===
-    a.add_ground(60, 28, 4, 4, tileset=1)
-    a.add_ground(64, 26, 4, 4, tileset=1)
-    a.add_ground(68, 24, 4, 4, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 66 * 16, 25 * 16)
-    a.add_sprite(db.PARAGOOMBA, 70 * 16, 20 * 16)
-
-    # Star Coin #1 — floating below Island 5's lowest step, in the gap
-    a.add_sprite(db.STAR_COIN, 58 * 16, 30 * 16,
-                 spritedata=bytes([0,0,0,0,0,0]))
-
-    # === ISLAND 6: V-shaped valley (Y=22 edges, Y=26 center) ===
-    a.add_ground(78, 22, 3, 4, tileset=1)     # left wall
-    a.add_ground(81, 26, 6, 4, tileset=1)     # valley floor
-    a.add_ground(87, 22, 3, 4, tileset=1)     # right wall
-    a.add_sprite(db.KOOPA_PARATROOPA, 83 * 16, 22 * 16)
-    a.add_sprite(db.KOOPA_PARATROOPA, 86 * 16, 18 * 16)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 90 * 16, 20 * 16)
-
-    # === ISLAND 7: Midway — wide safe platform (Y=24) ===
-    a.add_ground(96, 24, 12, 6, tileset=1)
-    a.add_sprite(db.MIDWAY_FLAG, 98 * 16, 23 * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-    a.add_question_block(104, 20, contents=1)   # mushroom — players need it!
-    a.add_question_block(107, 20, contents=2)   # fire flower for good measure
-
-    # === ISLAND 8: Stepping Stone Bridge (Y=25, same height as Island 7) ===
-    # Small solid platforms with Paratroopas bouncing above each gap.
-    # Player can walk/jump between solid stones; Paratroopas are bonus/obstacle.
-    a.add_ground(110, 25, 3, 3, tileset=1)      # stone 1 (right edge of island 7 gap)
-    a.add_sprite(db.KOOPA_PARATROOPA, 113 * 16, 22 * 16)  # Paratroopa above gap
-    a.add_ground(116, 23, 3, 3, tileset=1)      # stone 2 (slightly higher)
-    a.add_sprite(db.KOOPA_PARATROOPA, 121 * 16, 21 * 16)
-    a.add_ground(123, 25, 3, 3, tileset=1)      # stone 3 (dips down)
-    a.add_sprite(db.PARAGOOMBA, 125 * 16, 21 * 16)
-    a.add_ground(129, 22, 3, 3, tileset=1)      # stone 4 (back up)
-    a.add_sprite(db.KOOPA_PARATROOPA, 133 * 16, 20 * 16)
-    a.add_ground(136, 24, 3, 3, tileset=1)      # stone 5 → connects to Island 9
-
-    # === ISLAND 9: Anvil-shaped (wide top Y=18, narrow stem Y=22) ===
-    a.add_ground(140, 18, 8, 3, tileset=1)
-    a.add_ground(143, 21, 2, 6, tileset=1)     # stem
-    a.add_sprite(db.SLEDGE_BRO, 143 * 16, 17 * 16)
-
-    # Star Coin #2 — dangling below the anvil's top, next to the stem
-    a.add_sprite(db.STAR_COIN, 146 * 16, 22 * 16,
-                 spritedata=bytes([0,0,0,0,1,0]))
-
-    # === ISLAND 10: Zigzag chain (Y alternates 20-28) ===
-    a.add_ground(154, 20, 3, 3, tileset=1)
-    a.add_sprite(db.PARAGOOMBA, 155 * 16, 16 * 16)
-    a.add_ground(162, 28, 3, 3, tileset=1)
-    a.add_sprite(db.KOOPA, 163 * 16, 27 * 16)
-    a.add_ground(170, 22, 3, 3, tileset=1)
-    a.add_sprite(db.FIRE_BRO, 171 * 16, 21 * 16)
-    a.add_ground(178, 26, 3, 3, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 179 * 16, 25 * 16)
-    a.add_ground(186, 20, 3, 3, tileset=1)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 189 * 16, 18 * 16)
-
-    # Red coin ring across the zigzag
-    a.add_red_coin_ring(168, 22, group_id=0x71, pattern='wave')
-
-    # === ISLAND 11: L-shaped fortress (Y=24) ===
-    a.add_ground(196, 24, 10, 4, tileset=1)
-    a.add_ground(196, 20, 3, 4, tileset=1)     # vertical arm
-    a.add_sprite(db.SLEDGE_BRO, 200 * 16, 23 * 16)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 204 * 16, 22 * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 210 * 16, 22 * 16)
-
-    # Star Coin #3 — floating below the L-fortress, must drop from edge
-    a.add_sprite(db.STAR_COIN, 202 * 16, 29 * 16,
-                 spritedata=bytes([0,0,0,0,2,0]))
-
-    # === ISLAND 12: Goal Platform ===
-    a.add_ground(216, 24, 6, 4, tileset=1)
-    a.add_ground(226, 26, 30, 6, tileset=1)
-    a.add_sprite(db.GOAL_POLE, 248 * 16, 25 * 16)
-
-    builder.save("output/ChaosStation/Stage/07-02.arc")
-    print("Created 07-02: Gale Force Gauntlet")
-
-
-def create_level_7_3():
-    """07-03: Armada Approach — Airship-themed sky level. Narrow walkways
-    between tall column obstacles with Bullet Bills firing through gaps.
-    Geometry: long narrow decks with vertical pillars creating corridors.
-    SECRET EXIT via hidden pipe under the flagship deck."""
-    import tools.sprite_db as db
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_STANDARD)
-    a.set_tileset(1, db.TILESET_GRASS)
-    a.set_background(bg2=db.BG_ATHLETIC_SKY_2)
-    a.set_time(350)
-    a.add_zone(0, 0, 7500, 640, zone_id=0, music=db.MUSIC_LAVA, cam_mode=0, visibility=16)
-
-    GY = 26
-
-    # === SECTION A: Approach Run (X 0-60) ===
-    # Wide platform → narrow walkways between Bill launcher columns
-    a.add_ground(0, GY, 12, 6, tileset=1)
-    a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_sprite(10, 3 * 16, (GY - 2) * 16)
-    a.add_question_block(5, GY - 4, contents=5)   # Propeller suit — right at the start!
-    a.add_sprite(db.BOB_OMB, 8 * 16, (GY - 1) * 16)
-    a.add_sprite(db.HAMMER_BRO, 10 * 16, (GY - 1) * 16)
-
-    # Launcher column 1
-    a.add_ground(14, GY - 8, 2, 10, tileset=1)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 14 * 16, (GY - 10) * 16)
-
-    a.add_ground(18, GY, 6, 4, tileset=1)       # narrow deck
-    a.add_sprite(db.BOB_OMB, 20 * 16, (GY - 1) * 16)
-    a.add_sprite(db.KOOPA, 22 * 16, (GY - 1) * 16)
-
-    # Launcher column 2
-    a.add_ground(26, GY - 10, 2, 12, tileset=1)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 26 * 16, (GY - 12) * 16)
-
-    a.add_ground(30, GY - 1, 5, 4, tileset=1)   # slightly elevated deck
-    a.add_sprite(db.HAMMER_BRO, 32 * 16, (GY - 2) * 16)
-    a.add_sprite(db.BOB_OMB, 34 * 16, (GY - 2) * 16)
-
-    # Launcher column 3
-    a.add_ground(37, GY - 6, 2, 8, tileset=1)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 37 * 16, (GY - 8) * 16)
-
-    a.add_ground(41, GY, 8, 4, tileset=1)
-    a.add_sprite(db.BOB_OMB, 44 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BOB_OMB, 47 * 16, (GY - 1) * 16)
-    a.add_sprite(db.FIRE_BRO, 44 * 16, (GY - 1) * 16)
-
-    # === SECTION B: Crossfire Corridor (X 55-135) ===
-    # Long lower deck with overhead platforms that have Bill launchers.
-    # Banzai Bills from the right. Rocky Wrenches pop up.
-    a.add_ground(55, GY + 2, 35, 4, tileset=1)   # lower deck
-    # Overhead platforms with launchers pointing down
-    a.add_ground(60, GY - 6, 6, 2, tileset=1)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 63 * 16, (GY - 4) * 16)
-    a.add_ground(72, GY - 8, 6, 2, tileset=1)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 75 * 16, (GY - 6) * 16)
-    a.add_ground(84, GY - 5, 6, 2, tileset=1)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 87 * 16, (GY - 3) * 16)
-
-    # Rocky Wrenches on the lower deck
-    a.add_sprite(db.ROCKY_WRENCH, 60 * 16, (GY + 1) * 16)
-    a.add_sprite(db.ROCKY_WRENCH, 68 * 16, (GY + 1) * 16)
-    a.add_sprite(db.ROCKY_WRENCH, 76 * 16, (GY + 1) * 16)
-    a.add_sprite(db.ROCKY_WRENCH, 84 * 16, (GY + 1) * 16)
-    a.add_sprite(db.HAMMER_BRO, 72 * 16, (GY + 1) * 16)   # Hammer Bro on deck
-
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 95 * 16, (GY) * 16)
-
-    # Star Coin #1 — above the lower deck, between overhead launchers
-    a.add_sprite(db.STAR_COIN, 70 * 16, (GY - 2) * 16,
-                 spritedata=bytes([0,0,0,0,0,0]))
-
-    # === SECTION C: Tower Dodge (X 100-180) ===
-    # Tall pillars (2w × 10h) with enemies between. AMP rings around pillars.
-    a.add_ground(100, GY - 1, 5, 4, tileset=1)
-    a.add_sprite(db.MIDWAY_FLAG, 102 * 16, (GY - 2) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-    # Pillar 1
-    a.add_ground(110, GY - 8, 2, 10, tileset=1)
-    a.add_sprite(db.AMP, 112 * 16, (GY - 5) * 16)
-    a.add_ground(114, GY, 4, 4, tileset=1)
-    a.add_sprite(db.PARA_BOB_OMB, 116 * 16, (GY - 10) * 16)
-    a.add_sprite(db.BOB_OMB, 115 * 16, (GY - 1) * 16)
-
-    # Pillar 2 — taller
-    a.add_ground(120, GY - 12, 2, 14, tileset=1)
-    a.add_sprite(db.AMP, 122 * 16, (GY - 8) * 16)
-    a.add_sprite(db.AMP, 118 * 16, (GY - 3) * 16)   # extra Amp in gap
-    a.add_ground(124, GY - 2, 4, 4, tileset=1)
-    a.add_sprite(db.FIRE_BRO, 126 * 16, (GY - 3) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 125 * 16, (GY - 3) * 16)
-
-    # Pillar 3
-    a.add_ground(132, GY - 6, 2, 8, tileset=1)
-    a.add_sprite(db.AMP, 134 * 16, (GY - 3) * 16)
-    a.add_ground(136, GY, 5, 4, tileset=1)
-    a.add_sprite(db.PARA_BOB_OMB, 140 * 16, (GY - 12) * 16)
-    a.add_sprite(db.HAMMER_BRO, 138 * 16, (GY - 1) * 16)
-
-    # Star Coin #2 — on top of the tallest pillar 2
-    a.add_sprite(db.STAR_COIN, 120 * 16, (GY - 14) * 16,
-                 spritedata=bytes([0,0,0,0,1,0]))
-
-    # Pillar 4
-    a.add_ground(145, GY - 10, 2, 12, tileset=1)
-    a.add_sprite(db.AMP, 147 * 16, (GY - 6) * 16)
-    a.add_sprite(db.AMP, 143 * 16, (GY - 4) * 16)
-    a.add_ground(149, GY - 1, 4, 4, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 151 * 16, (GY - 2) * 16)
-    a.add_sprite(db.FIRE_BRO, 149 * 16, (GY - 2) * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 157 * 16, (GY - 3) * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 160 * 16, (GY + 2) * 16)
-
-    # === SECTION D: The Flagship (X 165-260) ===
-    # One massive platform — the "deck". Enemies swarm it.
-    a.add_ground(165, GY, 40, 6, tileset=1)     # main deck
-    # Sub-deck: elevated command platform
-    a.add_ground(180, GY - 5, 10, 2, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 183 * 16, (GY - 6) * 16)
-    a.add_sprite(db.FIRE_BRO, 187 * 16, (GY - 6) * 16)
-
-    # Fire Bars on deck
-    fb_cw  = b'\x00\x00\x00\x00\x10\x06'
-    fb_ccw = b'\x00\x00\x00\x00\x00\x06'
-    a.add_sprite(db.FIRE_BAR, 172 * 16, (GY - 3) * 16, spritedata=fb_cw)
-    a.add_sprite(db.FIRE_BAR, 195 * 16, (GY - 3) * 16, spritedata=fb_ccw)
-
-    # Deck enemies — heavy resistance on the flagship
-    a.add_sprite(db.BOB_OMB, 168 * 16, (GY - 1) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 173 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BOB_OMB, 177 * 16, (GY - 1) * 16)
-    a.add_sprite(db.FIRE_BRO, 192 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BOB_OMB, 196 * 16, (GY - 1) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 200 * 16, (GY - 1) * 16)
-
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 208 * 16, (GY - 2) * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 208 * 16, (GY + 4) * 16)
-
-    # Red coin ring over the flagship deck
-    a.add_red_coin_ring(185, GY - 8, group_id=0x72, pattern='arc')
-
-    # SECRET EXIT: Pipe hidden under the flagship deck.
-    # Small ground block under the main deck — player must drop off the right edge
-    # and loop back underneath to find it.
-    a.add_ground(200, GY + 4, 4, 2, tileset=1)    # hidden underbelly ledge
-    a.add_pipe(201, GY + 2, height=2, tileset=0)
-    a.add_entrance(1, x=201 * 16 + 8, y=(GY + 2) * 16, etype=2,
-                   zone_id=0, dest_area=2, dest_entrance=0)
-
-    # Star Coin #3 — at the end of the deck, behind Banzai Bill launchers
-    a.add_sprite(db.STAR_COIN, 203 * 16, (GY - 1) * 16,
-                 spritedata=bytes([0,0,0,0,2,0]))
-
-    # === SECTION E: Escape + Goal (X 210-280) ===
-    a.add_ground(215, GY - 2, 4, 4, tileset=1)
-    a.add_sprite(db.PARA_BOB_OMB, 218 * 16, (GY - 10) * 16)
-    a.add_sprite(db.FIRE_BRO, 217 * 16, (GY - 3) * 16)
-    a.add_ground(225, GY, 4, 4, tileset=1)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 231 * 16, (GY - 2) * 16)
-    a.add_sprite(db.BOB_OMB, 227 * 16, (GY - 1) * 16)
-    a.add_ground(235, GY - 1, 4, 4, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 237 * 16, (GY - 2) * 16)
-    a.add_ground(245, GY, 30, 6, tileset=1)
-    a.add_sprite(db.GOAL_POLE, 267 * 16, (GY - 1) * 16)
-
-    # ══════════ AREA 2: SECRET EXIT — Cargo Hold ══════════
-    a2 = builder.add_area(2)
-    a2.set_tileset(1, db.TILESET_CAVE)
-    a2.set_background(bg2=db.BG_UNDERGROUND)
-    a2.set_time(200)
-    a2.add_zone(0, 0, 3000, 480, zone_id=0, music=db.MUSIC_UNDERGROUND,
-                cam_mode=0, visibility=36)
-
-    SY = 22
-    a2.add_ground(0, SY, 8, 6, tileset=1)
-    a2.add_entrance(0, 3 * 16, (SY - 2) * 16, etype=0)
-    a2.add_ground(0, SY - 7, 60, 2, tileset=1)   # continuous ceiling
-
-    # Corridor — Bob-ombs and Fire Bars
-    a2.add_ground(8, SY, 14, 6, tileset=1)
-    a2.add_sprite(db.BOB_OMB, 12 * 16, (SY - 1) * 16)
-    a2.add_sprite(db.BOB_OMB, 18 * 16, (SY - 1) * 16)
-    a2.add_sprite(db.FIRE_BAR, 15 * 16, (SY - 4) * 16, spritedata=fb_cw)
-
-    a2.add_ground(26, SY, 14, 6, tileset=1)
-    a2.add_sprite(db.HAMMER_BRO, 30 * 16, (SY - 1) * 16)
-    a2.add_sprite(db.FIRE_BAR, 34 * 16, (SY - 4) * 16, spritedata=fb_ccw)
-    a2.add_sprite(db.CHAIN_CHOMP, 36 * 16, (SY - 1) * 16)
-
-    a2.add_ground(44, SY, 20, 6, tileset=1)
-    a2.add_sprite(db.SLEDGE_BRO, 48 * 16, (SY - 1) * 16)
-    a2.add_sprite(db.FIRE_BAR, 52 * 16, (SY - 4) * 16, spritedata=fb_cw)
-
-    # Red Goal Pole
-    a2.add_sprite(db.GOAL_POLE, 58 * 16, (SY - 1) * 16,
-                  spritedata=bytes([0, 0, 16, 0, 0, 0]))
-    a2.add_ground(62, SY, 20, 6, tileset=1)      # victory walk platform
-
-    builder.save("output/ChaosStation/Stage/07-03.arc")
-    print("Created 07-03: Armada Approach (+ secret exit)")
-
-
-def create_level_7_4():
-    """07-04: Skykeep Fortress — Castle built into a floating mountain.
-    Castle mechanics over bottomless pits instead of lava.
-    Geometry: enclosed rooms with ceilings, connected by drops. 2 areas."""
-    import tools.sprite_db as db
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_STANDARD)
-    a.set_tileset(1, db.TILESET_CASTLE)
-    a.set_background(bg2=db.BG_CASTLE)
-    a.set_time(400)
-    a.add_zone(0, 0, 8500, 640, zone_id=0, music=db.MUSIC_CASTLE, cam_mode=0, visibility=16)
-
-    GY = 28
-    fb_cw  = b'\x00\x00\x00\x00\x10\x06'
-    fb_ccw = b'\x00\x00\x00\x00\x00\x06'
-
-    # === ROOM 1: Crumbling Entrance (X 0-60) ===
-    # Floor with gaps over void. Dry Bones patrol. Thwomps guard passages.
-    a.add_ground(0, GY, 12, 6, tileset=1)
-    a.add_ground(0, GY - 8, 60, 2, tileset=1)   # ceiling
-    a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_sprite(10, 3 * 16, (GY - 2) * 16)
-    a.add_sprite(db.DRY_BONES, 8 * 16, (GY - 1) * 16)
-
-    # Gap + Thwomp
-    a.add_sprite(db.THWOMP, 15 * 16, (GY - 6) * 16)
-    a.add_ground(18, GY, 8, 6, tileset=1)
-    a.add_sprite(db.DRY_BONES, 22 * 16, (GY - 1) * 16)
-    a.add_sprite(db.DRY_BONES, 24 * 16, (GY - 1) * 16)
-
-    # Gap + Thwomp
-    a.add_sprite(db.THWOMP, 28 * 16, (GY - 6) * 16)
-    a.add_ground(32, GY, 10, 6, tileset=1)
-    a.add_sprite(db.FIRE_BAR, 36 * 16, (GY - 4) * 16, spritedata=fb_cw)
-    a.add_sprite(db.HAMMER_BRO, 38 * 16, (GY - 1) * 16)
-
-    # Gap + Thwomp → exit room 1
-    a.add_sprite(db.THWOMP, 44 * 16, (GY - 6) * 16)
-    a.add_ground(48, GY, 8, 6, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 52 * 16, (GY - 1) * 16)
-    a.add_question_block(50, GY - 4, contents=2)  # fire flower
-
-    # === ROOM 2: Fire Bar Labyrinth (X 60-155) ===
-    # Three height levels of platforms with Fire Bars at junctions.
-    # No ceiling here — open to the "sky" above the castle ruins.
-
-    # Bottom level (GY)
-    a.add_ground(62, GY, 8, 4, tileset=1)
-    a.add_sprite(db.FIRE_BAR, 66 * 16, (GY - 3) * 16, spritedata=fb_cw)
-    a.add_sprite(db.GIANT_DRY_BONES, 68 * 16, (GY - 1) * 16)
-
-    # Middle level (GY-5)
-    a.add_ground(74, GY - 5, 8, 2, tileset=1)
-    a.add_sprite(db.FIRE_BAR, 78 * 16, (GY - 8) * 16, spritedata=fb_ccw)
-    a.add_sprite(db.AMP, 82 * 16, (GY - 3) * 16)
-
-    # Top level (GY-10)
-    a.add_ground(86, GY - 10, 6, 2, tileset=1)
-    a.add_sprite(db.FIRE_BAR, 89 * 16, (GY - 13) * 16, spritedata=fb_cw)
-
-    # Star Coin #1 — on the bottom level, behind Fire Bar timing
-    a.add_sprite(db.STAR_COIN, 64 * 16, (GY - 1) * 16,
-                 spritedata=bytes([0,0,0,0,0,0]))
-
-    # Second set — platforms shift to different arrangement
-    # Bottom right
-    a.add_ground(96, GY, 8, 4, tileset=1)
-    a.add_sprite(db.DRY_BONES, 98 * 16, (GY - 1) * 16)
-    a.add_sprite(db.DRY_BONES, 102 * 16, (GY - 1) * 16)
-    # Middle left
-    a.add_ground(108, GY - 6, 8, 2, tileset=1)
-    a.add_sprite(db.FIRE_BAR, 112 * 16, (GY - 9) * 16, spritedata=fb_ccw)
-    a.add_sprite(db.HAMMER_BRO, 114 * 16, (GY - 7) * 16)
-    # Top right
-    a.add_ground(120, GY - 11, 6, 2, tileset=1)
-    a.add_sprite(db.FIRE_BAR, 123 * 16, (GY - 14) * 16, spritedata=fb_cw)
-
-    # Converge to single path
-    a.add_ground(130, GY - 4, 10, 4, tileset=1)
-    a.add_sprite(db.MIDWAY_FLAG, 132 * 16, (GY - 5) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-    a.add_sprite(db.AMP, 138 * 16, (GY - 1) * 16)
-
-    # === ROOM 3: Skewer Gallery (X 145-225) ===
-    # Ceiling returns. Skewers alternate from ceiling and floor.
-    a.add_ground(145, GY, 80, 6, tileset=1)       # long floor
-    a.add_ground(145, GY - 10, 80, 2, tileset=1)  # ceiling
-
-    # Skewer pairs — alternating up/down
-    a.add_sprite(db.SKEWER_DOWN, 155 * 16, (GY - 8) * 16)
-    a.add_sprite(db.CHAIN_CHOMP, 160 * 16, (GY - 1) * 16)
-    a.add_sprite(db.SKEWER_UP, 170 * 16, (GY + 2) * 16)
-    a.add_sprite(db.SKEWER_DOWN, 180 * 16, (GY - 8) * 16)
-    a.add_sprite(db.CHAIN_CHOMP, 185 * 16, (GY - 1) * 16)
-    a.add_sprite(db.SKEWER_UP, 195 * 16, (GY + 2) * 16)
-    a.add_sprite(db.SKEWER_DOWN, 205 * 16, (GY - 8) * 16)
-
-    # Star Coin #2 — between two skewers, timing-dependent
-    a.add_sprite(db.STAR_COIN, 175 * 16, (GY - 5) * 16,
-                 spritedata=bytes([0,0,0,0,1,0]))
-
-    # Red coin ring in the skewer gallery
-    a.add_red_coin_ring(190, GY - 5, group_id=0x73, pattern='line')
-
-    # === ROOM 4: Podoboo Ascent (X 225-310) ===
-    # Ascending staircase over void. Podoboos leap from below.
-    # No ceiling — open sky ruins.
-    a.add_ground(230, GY, 6, 4, tileset=1)
-    a.add_sprite(db.PODOBOO, 232 * 16, (GY + 4) * 16)
-    a.add_ground(240, GY - 3, 6, 4, tileset=1)
-    a.add_sprite(db.PODOBOO, 242 * 16, (GY + 1) * 16)
-    a.add_sprite(db.FIRE_BRO, 244 * 16, (GY - 4) * 16)
-    a.add_ground(250, GY - 6, 6, 4, tileset=1)
-    a.add_sprite(db.PODOBOO, 252 * 16, (GY - 2) * 16)
-    a.add_sprite(db.BIG_THWOMP, 256 * 16, (GY - 14) * 16)
-    a.add_ground(260, GY - 9, 6, 4, tileset=1)
-    a.add_sprite(db.PODOBOO, 262 * 16, (GY - 5) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 264 * 16, (GY - 10) * 16)
-
-    # Star Coin #3 — on a side ledge between staircase platforms, risky drop to grab
-    a.add_ground(245, GY - 1, 4, 1, tileset=1)   # small ledge below platform 2
-    a.add_sprite(db.STAR_COIN, 247 * 16, (GY - 2) * 16,
-                 spritedata=bytes([0,0,0,0,2,0]))
-
-    # Pipe to Area 2
-    a.add_ground(270, GY - 12, 8, 4, tileset=1)
-    a.add_pipe(274, GY - 14, height=2, tileset=0)
-    a.add_entrance(1, x=274 * 16 + 8, y=(GY - 14) * 16, etype=2,
-                   zone_id=0, dest_area=2, dest_entrance=0)
-
-    # ══════════ AREA 2: The Treasury (long pipe section) ══════════
-    a2 = builder.add_area(2)
-    a2.set_tileset(1, db.TILESET_CASTLE)
-    a2.set_background(bg2=db.BG_CASTLE)
-    a2.set_time(250)
-    a2.add_zone(0, 0, 6000, 480, zone_id=0, music=db.MUSIC_CASTLE,
-                cam_mode=0, visibility=16)
-
-    TY = 22
-    # Continuous floor + ceiling throughout
-    a2.add_ground(0, TY, 200, 6, tileset=1)
-    a2.add_ground(0, TY - 9, 200, 2, tileset=1)
-    a2.add_entrance(0, 3 * 16, (TY - 2) * 16, etype=0)
-    a2.add_entrance(1, 108 * 16, (TY - 1) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-
-    # --- Room A: Coin vault with Fire Bars (X 0-55) ---
-    a2.add_coin_line(8, TY - 3, 6)
-    a2.add_sprite(db.FIRE_BAR, 16 * 16, (TY - 6) * 16, spritedata=fb_cw)
-    a2.add_coin_line(20, TY - 3, 6)
-    a2.add_sprite(db.DRY_BONES, 28 * 16, (TY - 1) * 16)
-    a2.add_sprite(db.FIRE_BAR, 35 * 16, (TY - 6) * 16, spritedata=fb_ccw)
-    a2.add_coin_line(38, TY - 3, 6)
-    a2.add_sprite(db.GIANT_DRY_BONES, 46 * 16, (TY - 1) * 16)
-
-    # --- Room B: Skewer corridor (X 55-110) ---
-    # Skewers from ceiling and floor forcing timing
-    a2.add_sprite(db.SKEWER_DOWN, 60 * 16, (TY - 7) * 16)
-    a2.add_sprite(db.FIRE_BAR, 65 * 16, (TY - 6) * 16, spritedata=fb_cw)
-    a2.add_sprite(db.SKEWER_UP, 73 * 16, (TY + 2) * 16)
-    a2.add_sprite(db.DRY_BONES, 68 * 16, (TY - 1) * 16)
-    a2.add_sprite(db.SKEWER_DOWN, 82 * 16, (TY - 7) * 16)
-    a2.add_sprite(db.FIRE_BAR, 88 * 16, (TY - 6) * 16, spritedata=fb_ccw)
-    a2.add_sprite(db.SKEWER_UP, 95 * 16, (TY + 2) * 16)
-    a2.add_sprite(db.HAMMER_BRO, 100 * 16, (TY - 1) * 16)
-
-    # --- Midway ---
-    a2.add_sprite(db.MIDWAY_FLAG, 108 * 16, (TY - 1) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-    # --- Room C: Podoboo gauntlet (X 110-165) ---
-    # Floor gaps over lava — Podoboos leap up
-    a2.add_ground(112, TY, 8, 4, tileset=1)   # island 1
-    a2.add_sprite(db.PODOBOO, 116 * 16, (TY + 4) * 16)
-    a2.add_sprite(db.FIRE_BAR, 114 * 16, (TY - 6) * 16, spritedata=fb_cw)
-
-    a2.add_ground(124, TY, 6, 4, tileset=1)   # island 2
-    a2.add_sprite(db.PODOBOO, 127 * 16, (TY + 4) * 16)
-    a2.add_sprite(db.CHAIN_CHOMP, 126 * 16, (TY - 1) * 16)
-
-    a2.add_ground(134, TY, 6, 4, tileset=1)   # island 3
-    a2.add_sprite(db.PODOBOO, 137 * 16, (TY + 4) * 16)
-    a2.add_sprite(db.FIRE_BAR, 136 * 16, (TY - 6) * 16, spritedata=fb_ccw)
-
-    a2.add_ground(144, TY, 6, 4, tileset=1)   # island 4
-    a2.add_sprite(db.SLEDGE_BRO, 147 * 16, (TY - 1) * 16)
-    a2.add_sprite(db.PODOBOO, 147 * 16, (TY + 4) * 16)
-
-    a2.add_ground(154, TY, 8, 4, tileset=1)   # solid stretch
-    a2.add_sprite(db.FIRE_BAR, 158 * 16, (TY - 6) * 16, spritedata=fb_cw)
-    a2.add_sprite(db.BIG_THWOMP, 162 * 16, (TY - 12) * 16)
-
-    # --- Room D: Final sprint + goal (X 165-200) ---
-    a2.add_sprite(db.SKEWER_DOWN, 170 * 16, (TY - 7) * 16)
-    a2.add_sprite(db.DRY_BONES, 175 * 16, (TY - 1) * 16)
-    a2.add_sprite(db.DRY_BONES, 178 * 16, (TY - 1) * 16)
-    a2.add_sprite(db.FIRE_BAR, 182 * 16, (TY - 6) * 16, spritedata=fb_ccw)
-    a2.add_sprite(db.SKEWER_UP, 188 * 16, (TY + 2) * 16)
-
-    a2.add_sprite(db.GOAL_POLE, 195 * 16, (TY - 1) * 16)
-
-    builder.save("output/ChaosStation/Stage/07-04.arc")
-    print("Created 07-04: Skykeep Fortress")
-
-
-def create_level_7_5():
-    """07-05: Stormcellar Depths — Cave inside the floating mountain.
-    Tight tunnels, ceiling everywhere, branching paths, vertical drop shaft.
-    Geometry: narrow corridors with ceilings, NOT open platforms."""
-    import tools.sprite_db as db
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_UNDERGROUND)
-    a.set_tileset(1, db.TILESET_CAVE)
-    a.set_background(bg2=db.BG_UNDERGROUND)
-    a.set_time(400)
-    a.add_zone(0, 0, 7000, 800, zone_id=0, music=db.MUSIC_UNDERGROUND, cam_mode=0, visibility=36)
-
-    GY = 24  # ground Y
-    CY = GY - 7  # ceiling Y (7 tiles of space)
-
-    # === SECTION A: Cave Entrance (X 0-55) ===
-    a.add_ground(0, GY, 55, 6, tileset=1)       # floor
-    a.add_ground(0, CY, 55, 3, tileset=1)       # ceiling
-
-    a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 120 * 16, (GY - 1) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-    a.add_sprite(10, 3 * 16, (GY - 2) * 16)
-
-    a.add_sprite(db.BUZZY_BEETLE, 10 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 15 * 16, (CY + 3) * 16)  # ceiling walker
-    a.add_sprite(db.SWOOP, 20 * 16, (CY + 3) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 28 * 16, (GY - 1) * 16)
-    a.add_sprite(db.SWOOP, 35 * 16, (CY + 3) * 16)
-    a.add_sprite(db.SPIKE_TOP, 40 * 16, (GY - 1) * 16)
-    a.add_question_block(25, GY - 4, contents=1)  # mushroom
-
-    # Pillar narrows the passage
-    a.add_ground(45, CY + 3, 3, 3, tileset=1)   # ceiling stalactite
-    a.add_sprite(db.BUZZY_BEETLE, 48 * 16, (CY + 6) * 16)
-
-    # === SECTION B: Spike Top Tunnels (X 55-125) ===
-    # Ceiling lowers, creating tighter space. Spike Tops on walls.
-    a.add_ground(55, GY, 70, 6, tileset=1)       # floor continues
-    a.add_ground(55, CY + 1, 70, 3, tileset=1)  # lower ceiling (6 tiles)
-
-    # Narrow squeeze with Spike Tops on ceiling
-    a.add_sprite(db.SPIKE_TOP, 60 * 16, (CY + 4) * 16)
-    a.add_sprite(db.SPIKE_TOP, 68 * 16, (GY - 1) * 16)
-    a.add_sprite(db.SPIKE_TOP, 76 * 16, (CY + 4) * 16)
-    a.add_sprite(db.SWOOP, 64 * 16, (CY + 4) * 16)
-    a.add_sprite(db.SWOOP, 72 * 16, (CY + 4) * 16)
-
-    # Floor bumps creating uneven terrain
-    a.add_ground(80, GY - 2, 4, 2, tileset=1)   # raised section
-    a.add_sprite(db.BUZZY_BEETLE, 82 * 16, (GY - 3) * 16)
-    a.add_ground(90, GY - 1, 3, 1, tileset=1)   # small bump
-    a.add_sprite(db.SPIKE_TOP, 92 * 16, (CY + 4) * 16)
-
-    # Star Coin #1 — in a ceiling alcove, need to jump up into tight gap
-    a.add_ground(98, CY + 4, 3, 1, tileset=1)   # alcove shelf
-    a.add_sprite(db.STAR_COIN, 99 * 16, (CY + 3) * 16,
-                 spritedata=bytes([0,0,0,0,0,0]))
-
-    # Monty Moles pop from ground
-    a.add_sprite(db.MONTY_MOLE, 105 * 16, (GY - 1) * 16)
-    a.add_sprite(db.MONTY_MOLE, 115 * 16, (GY - 1) * 16)
-
-    a.add_sprite(db.MIDWAY_FLAG, 120 * 16, (GY - 1) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-    # === SECTION C: Fuzzy Rails (X 125-205) ===
-    # Open cave chamber. Fuzzies on tracks, Chain Chomps on platforms.
-    a.add_ground(125, GY, 80, 6, tileset=1)
-    a.add_ground(125, CY - 2, 80, 3, tileset=1) # high ceiling (more space)
-
-    # Raised platforms with enemies
-    a.add_ground(130, GY - 4, 6, 2, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 133 * 16, (GY - 5) * 16)
-
-    a.add_ground(142, GY - 3, 5, 1, tileset=1)
-    a.add_sprite(db.FUZZY, 144 * 16, (GY - 4) * 16)  # fuzzy on track
-
-    a.add_ground(152, GY - 6, 6, 2, tileset=1)
-    a.add_sprite(db.CHAIN_CHOMP, 155 * 16, (GY - 7) * 16)
-    a.add_sprite(db.FUZZY, 158 * 16, (GY - 2) * 16)
-
-    a.add_ground(164, GY - 2, 4, 2, tileset=1)
-    a.add_sprite(db.MONTY_MOLE, 166 * 16, (GY - 1) * 16)
-
-    a.add_ground(174, GY - 5, 6, 2, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 177 * 16, (GY - 6) * 16)
-    a.add_sprite(db.FUZZY, 180 * 16, (GY - 3) * 16)
-
-    a.add_ground(186, GY - 3, 5, 3, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 188 * 16, (GY - 4) * 16)
-
-    # Star Coin #2 — on top of a raised platform, guarded by Chain Chomp
-    a.add_sprite(db.STAR_COIN, 153 * 16, (GY - 8) * 16,
-                 spritedata=bytes([0,0,0,0,1,0]))
-
-    # === SECTION D: Amp Corridor (X 205-280) ===
-    # Tight tunnel — Amps sit on the floor so player must jump over them.
-    # Ceiling is only 3 tiles above floor, so Amps are ONLY at floor level (GY-1).
-    # This is challenging but always passable — no damage boost required.
-    a.add_ground(205, GY, 75, 6, tileset=1)       # floor continues
-    a.add_ground(205, CY + 1, 75, 3, tileset=1)   # ceiling (bottom at GY-4)
-
-    # Amps at floor level (GY-1) — player jumps over, 3 tiles of clearance to ceiling
-    a.add_sprite(db.AMP, 210 * 16, (GY - 1) * 16)
-    a.add_sprite(db.AMP, 219 * 16, (GY - 1) * 16)
-    a.add_sprite(db.AMP, 228 * 16, (GY - 1) * 16)
-    a.add_sprite(db.AMP, 237 * 16, (GY - 1) * 16)
-    a.add_sprite(db.AMP, 246 * 16, (GY - 1) * 16)
-    a.add_sprite(db.AMP, 255 * 16, (GY - 1) * 16)
-    a.add_sprite(db.AMP, 264 * 16, (GY - 1) * 16)
-    a.add_sprite(db.AMP, 273 * 16, (GY - 1) * 16)
-
-    # Swoops from ceiling — adds tension without blocking the floor path
-    a.add_sprite(db.SWOOP, 214 * 16, (CY + 4) * 16)
-    a.add_sprite(db.SWOOP, 232 * 16, (CY + 4) * 16)
-    a.add_sprite(db.SWOOP, 250 * 16, (CY + 4) * 16)
-    a.add_sprite(db.SWOOP, 268 * 16, (CY + 4) * 16)
-
-    # Star Coin #3 — floating between two Amps, grab mid-jump
-    a.add_sprite(db.STAR_COIN, 241 * 16, (GY - 3) * 16,
-                 spritedata=bytes([0,0,0,0,2,0]))
-
-    # === SECTION E: Exit Sprint (X 280-340) ===
-    # Cave opens up slightly. Hammer Bros + Sledge Bro guarding the goal.
-    a.add_ground(280, GY, 60, 6, tileset=1)
-    a.add_ground(280, CY - 1, 60, 3, tileset=1)   # high ceiling — relief after tight section
-
-    a.add_sprite(db.HAMMER_BRO, 288 * 16, (GY - 1) * 16)
-    a.add_sprite(db.SPIKE_TOP, 294 * 16, (GY - 1) * 16)
-    a.add_sprite(db.MONTY_MOLE, 300 * 16, (GY - 1) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 308 * 16, (GY - 1) * 16)
-    a.add_sprite(db.SWOOP, 314 * 16, (CY + 2) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 320 * 16, (CY + 3) * 16)  # ceiling walker
-
-    # Exit — wide goal area
-    a.add_ground(325, GY, 15, 6, tileset=1)
-    a.add_sprite(db.GOAL_POLE, 332 * 16, (GY - 1) * 16)
-
-    builder.save("output/ChaosStation/Stage/07-05.arc")
-    print("Created 07-05: Stormcellar Depths")
-
-
-def create_level_7_6():
-    """07-06: Skyfall Gauntlet — Final sky challenge. Tiny zigzag platforms
-    in rapid succession, double Lakitu, Falling Platform marathon.
-    Geometry: ultra-narrow platforms in diagonal patterns. Tight timer."""
-    import tools.sprite_db as db
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_STANDARD)
-    a.set_tileset(1, db.TILESET_GRASS)
-    a.set_background(bg2=db.BG_ATHLETIC_SKY_1)
-    a.set_time(300)  # tight timer!
-    a.add_zone(0, 0, 8500, 640, zone_id=0, music=db.MUSIC_ATHLETIC, cam_mode=0, visibility=16)
-
-    GY = 26
-
-    # === SECTION A: Sprint Start (X 0-50) ===
-    # Narrow platforms in zigzag, ascending fast. No time to wait.
-    a.add_ground(0, GY, 6, 4, tileset=1)
-    a.add_entrance(0, 2 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 152 * 16, (GY - 4) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-    a.add_sprite(10, 2 * 16, (GY - 2) * 16)
-
-    # Zigzag ascent — 3-tile platforms
-    a.add_ground(9, GY - 2, 3, 3, tileset=1)
-    a.add_sprite(db.PARAGOOMBA, 10 * 16, (GY - 6) * 16)
-    a.add_ground(16, GY - 4, 3, 3, tileset=1)
-    a.add_sprite(db.KOOPA_PARATROOPA, 17 * 16, (GY - 8) * 16)
-    a.add_ground(23, GY - 2, 3, 3, tileset=1)
-    a.add_sprite(db.PARAGOOMBA, 24 * 16, (GY - 6) * 16)
-    a.add_ground(30, GY - 5, 3, 3, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 31 * 16, (GY - 6) * 16)
-    a.add_ground(37, GY - 3, 3, 3, tileset=1)
-    a.add_ground(44, GY - 6, 3, 3, tileset=1)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 47 * 16, (GY - 8) * 16)
-
-    # === SECTION B: Falling Platform Marathon (X 55-145) ===
-    # 12 consecutive Falling Platforms. No solid ground. Must keep moving.
-    a.add_ground(55, GY - 4, 4, 3, tileset=1)   # launch pad
-
-    # 12 donut blocks — varying heights to force different jump arcs
-    for i, (dx, dy) in enumerate([
-        (63, -3), (70, -5), (77, -2), (84, -6), (91, -3),
-        (98, -4), (105, -7), (112, -2), (119, -5), (126, -3),
-        (133, -6), (140, -4)
-    ]):
-        a.add_sprite(db.FALLING_PLATFORM, dx * 16, (GY + dy) * 16)
-
-    # Lakitu enters during the marathon!
-    a.add_sprite(db.LAKITU, 80 * 16, (GY - 14) * 16)
-
-    # Bullet Bills from the side
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 100 * 16, (GY + 2) * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 125 * 16, (GY - 1) * 16)
-
-    # Star Coin #1 — below a falling platform, freefall grab
-    a.add_sprite(db.STAR_COIN, 84 * 16, (GY + 2) * 16,
-                 spritedata=bytes([0,0,0,0,0,0]))
-
-    # === SECTION C: Midway + Scale/Bolt Platforms (X 150-220) ===
-    a.add_ground(150, GY - 3, 6, 4, tileset=1)
-    a.add_sprite(db.MIDWAY_FLAG, 152 * 16, (GY - 4) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-    # Scale platforms (weight-based)
-    a.add_sprite(db.SCALE_PLATFORM, 162 * 16, (GY - 6) * 16)
-    a.add_sprite(db.PARAGOOMBA, 165 * 16, (GY - 10) * 16)
-    a.add_sprite(db.PARAGOOMBA, 170 * 16, (GY - 8) * 16)
-
-    a.add_ground(175, GY - 4, 3, 3, tileset=1)
-    a.add_sprite(db.FIRE_BRO, 176 * 16, (GY - 5) * 16)
-
-    a.add_sprite(db.SCALE_PLATFORM, 184 * 16, (GY - 5) * 16)
-    a.add_sprite(db.AMP, 188 * 16, (GY - 3) * 16)
-
-    a.add_ground(194, GY - 3, 3, 3, tileset=1)
-    a.add_sprite(db.KOOPA_PARATROOPA, 196 * 16, (GY - 7) * 16)
-
-    # Bolt platform ride
-    a.add_sprite(db.BOLT_PLATFORM, 204 * 16, (GY - 4) * 16)
-    a.add_sprite(db.AMP, 210 * 16, (GY - 6) * 16)
-    a.add_sprite(db.AMP, 215 * 16, (GY - 2) * 16)
-
-    # Star Coin #2 — off the bolt platform path, risky jump
-    a.add_sprite(db.STAR_COIN, 208 * 16, (GY - 12) * 16,
-                 spritedata=bytes([0,0,0,0,1,0]))
-
-    # Red coin ring
-    a.add_red_coin_ring(200, GY - 6, group_id=0x75, pattern='arc')
-
-    # === SECTION D: Double Lakitu Assault (X 225-310) ===
-    # Two Lakitus! Tiny platforms with huge gaps. Bros everywhere.
-    a.add_sprite(db.LAKITU, 230 * 16, (GY - 16) * 16)  # second Lakitu
-
-    a.add_ground(225, GY - 2, 3, 3, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 226 * 16, (GY - 3) * 16)
-    a.add_ground(235, GY - 5, 2, 2, tileset=1)
-    a.add_ground(243, GY - 1, 3, 3, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 244 * 16, (GY - 2) * 16)
-    a.add_ground(252, GY - 4, 2, 2, tileset=1)
-    a.add_sprite(db.BULLET_BILL_LAUNCHER, 256 * 16, (GY - 6) * 16)
-    a.add_ground(260, GY - 2, 3, 3, tileset=1)
-    a.add_sprite(db.FIRE_BRO, 261 * 16, (GY - 3) * 16)
-    a.add_ground(269, GY - 6, 2, 2, tileset=1)
-    a.add_ground(277, GY - 1, 3, 3, tileset=1)
-    a.add_sprite(db.HAMMER_BRO, 278 * 16, (GY - 2) * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 284 * 16, (GY - 3) * 16)
-    a.add_ground(288, GY - 4, 2, 2, tileset=1)
-    a.add_ground(296, GY - 2, 3, 3, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 297 * 16, (GY - 3) * 16)
-
-    fb_cw = b'\x00\x00\x00\x00\x10\x06'
-    # Fire Bars on tall columns
-    a.add_sprite(db.FIRE_BAR, 250 * 16, (GY - 10) * 16, spritedata=fb_cw)
-    a.add_sprite(db.FIRE_BAR, 275 * 16, (GY - 10) * 16, spritedata=fb_cw)
-
-    # === SECTION E: The Skyfall (X 310-380) ===
-    # Wide falling platforms with enemies ON them. Must clear + jump.
-    a.add_ground(310, GY - 3, 4, 3, tileset=1)   # launch
-
-    # Falling platforms with enemies
-    a.add_sprite(db.FALLING_PLATFORM, 318 * 16, (GY - 2) * 16)
-    a.add_sprite(db.SPINY, 318 * 16, (GY - 3) * 16)
-    a.add_sprite(db.FALLING_PLATFORM, 326 * 16, (GY - 4) * 16)
-    a.add_sprite(db.BOB_OMB, 326 * 16, (GY - 5) * 16)
-    a.add_sprite(db.FALLING_PLATFORM, 334 * 16, (GY - 1) * 16)
-    a.add_sprite(db.KOOPA, 334 * 16, (GY - 2) * 16)
-    a.add_sprite(db.FALLING_PLATFORM, 342 * 16, (GY - 5) * 16)
-    a.add_sprite(db.PARAGOOMBA, 342 * 16, (GY - 8) * 16)
-    a.add_sprite(db.FALLING_PLATFORM, 350 * 16, (GY - 2) * 16)
-    a.add_sprite(db.HAMMER_BRO, 350 * 16, (GY - 3) * 16)
-
-    # Star Coin #3 — on the Bob-omb's falling platform, grab fast!
-    a.add_sprite(db.STAR_COIN, 327 * 16, (GY - 6) * 16,
-                 spritedata=bytes([0,0,0,0,2,0]))
-
-    # Final solid ground + Goal
-    a.add_ground(360, GY, 30, 6, tileset=1)
-    a.add_sprite(db.GOAL_POLE, 382 * 16, (GY - 1) * 16)
-
-    builder.save("output/ChaosStation/Stage/07-06.arc")
-    print("Created 07-06: Skyfall Gauntlet")
-
-
-def create_level_7_ghost_house():
-    """07-21: The Phantom Skyship — Ghost house in a wrecked airship.
-    Boos, Broozers, P-Switch secret exit.
-    Rooms connected by continuous floor with ceiling gaps between sections."""
-    import tools.sprite_db as db
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_STANDARD)
-    a.set_tileset(1, db.TILESET_GHOST_HOUSE)
-    a.set_background(bg2=db.BG_GHOST_HOUSE)
-    a.set_time(450)
-    a.add_zone(0, 0, 6500, 640, zone_id=0, music=db.MUSIC_GHOST_HOUSE,
-               cam_mode=0, visibility=36, model_dark=12)
-
-    GY = 26
-
-    # === Continuous floor through ALL rooms ===
-    # One long floor so the player never hits a wall.
-    a.add_ground(0, GY, 250, 6, tileset=1)
-
-    # === ROOM 1: Foyer (X 0-60) ===
-    # Dark room! Glow blocks provide limited visibility.
-    a.add_ground(0, GY - 9, 58, 3, tileset=1)     # ceiling stops before Room 2
-    a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_sprite(10, 3 * 16, (GY - 2) * 16)
-
-    # Single glow block — carry it through the entire ghost house!
-    a.add_sprite(db.GLOW_BLOCK, 6 * 16, (GY - 4) * 16)
-
-    a.add_sprite(db.BOO, 12 * 16, (GY - 4) * 16)
-    a.add_sprite(db.BOO, 20 * 16, (GY - 3) * 16)
-    a.add_sprite(db.BOO, 28 * 16, (GY - 5) * 16)
-
-    # === BREAKABLE BRICK WALL — Broozer smashes through! ===
-    # 2 columns × 6 rows of individual brick blocks (at x=35-36)
-    for bx in range(35, 37):
-        for by in range(GY - 6, GY):
-            a.add_brick_block(bx, by, contents=0)
-    # Broozer is on the LEFT side — it charges RIGHT and smashes the wall
-    a.add_sprite(db.BROOZER, 32 * 16, (GY - 3) * 16)
-
-    # Star Coin #1 — hidden BEHIND the brick wall (to the right of it)
-    a.add_sprite(db.STAR_COIN, 38 * 16, (GY - 3) * 16,
-                 spritedata=bytes([0,0,0,0,0,0]))
-
-    a.add_sprite(db.BOO, 42 * 16, (GY - 4) * 16)
-    a.add_sprite(db.BIG_BOO, 50 * 16, (GY - 4) * 16)
-
-    # === ROOM 2: The False Gallery (X 65-150) ===
-    # Higher ceiling, with platforms at varying heights.
-    a.add_ground(65, GY - 10, 90, 3, tileset=1)   # separate ceiling block
-
-    # Platforms at varying heights — stepping stones in the dark
-    a.add_ground(70, GY - 4, 6, 2, tileset=1)
-    a.add_sprite(db.BOO, 73 * 16, (GY - 6) * 16)
-    a.add_ground(82, GY - 7, 5, 2, tileset=1)
-    a.add_sprite(db.BROOZER, 84 * 16, (GY - 8) * 16)
-    a.add_ground(93, GY - 3, 6, 2, tileset=1)
-    a.add_sprite(db.DRY_BONES, 96 * 16, (GY - 4) * 16)
-
-    # Blue P-Switch on a raised platform — hit it to destroy the brick wall!
-    a.add_ground(105, GY - 5, 5, 2, tileset=1)
-    # P-Switch: nybble 10 (byte 4 high) = 0 for blue. Set byte 4=0x00 explicitly.
-    a.add_sprite(db.P_SWITCH, 107 * 16, (GY - 6) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 0, 0]))
-
-    a.add_sprite(db.BOO, 118 * 16, (GY - 5) * 16)
-    a.add_sprite(db.BOO, 128 * 16, (GY - 3) * 16)
-    a.add_sprite(db.BROOZER, 133 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BIG_BOO, 140 * 16, (GY - 5) * 16)
-
-    a.add_sprite(db.MIDWAY_FLAG, 145 * 16, (GY - 1) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-    # Star Coin #2 — on the raised P-Switch platform
-    a.add_sprite(db.STAR_COIN, 110 * 16, (GY - 6) * 16,
-                 spritedata=bytes([0,0,0,0,1,0]))
-
-    # SECRET EXIT: pipe hidden behind a BRICK WALL.
-    # When P-Switch is hit → bricks become coins → wall disappears → pipe revealed!
-    # Pipe placed first, then bricks on top to hide it (4 columns × 5 rows)
-    a.add_pipe(123, GY - 2, height=2, tileset=0)
-    a.add_entrance(1, x=123 * 16 + 8, y=(GY - 2) * 16, etype=2,
-                   zone_id=0, dest_area=2, dest_entrance=0)
-    # Brick wall covering the pipe (x=121-124, fully covers pipe at 123-124)
-    for bx in range(121, 125):
-        for by in range(GY - 5, GY):
-            a.add_brick_block(bx, by, contents=0)
-    # Small ground ledge past the wall to reach pipe area after P-Switch
-    a.add_ground(125, GY - 2, 3, 1, tileset=1)
-
-    # === ROOM 3: The Abyss (X 160-250) ===
-    # Ceiling block for room 3 — separate from room 2
-    a.add_ground(160, GY - 10, 90, 3, tileset=1)
-
-    # Raised platforms with Boos — floor is continuous underneath
-    a.add_ground(168, GY - 4, 3, 2, tileset=1)
-    a.add_sprite(db.BOO, 169 * 16, (GY - 6) * 16)
-    a.add_ground(177, GY - 6, 3, 2, tileset=1)
-    a.add_sprite(db.BOO, 178 * 16, (GY - 8) * 16)
-    a.add_ground(186, GY - 3, 3, 2, tileset=1)
-    a.add_sprite(db.BIG_BOO, 187 * 16, (GY - 5) * 16)
-    a.add_ground(195, GY - 5, 3, 2, tileset=1)
-    a.add_sprite(db.BOO, 196 * 16, (GY - 7) * 16)
-    a.add_sprite(db.BROOZER, 200 * 16, (GY - 1) * 16)
-    a.add_ground(205, GY - 4, 3, 2, tileset=1)
-    a.add_sprite(db.BOO, 206 * 16, (GY - 6) * 16)
-    a.add_sprite(db.BOO, 212 * 16, (GY - 3) * 16)
-
-    # Star Coin #3 — on a platform just below the ceiling (ceiling bottom is GY-7)
-    a.add_ground(190, GY - 6, 2, 1, tileset=1)
-    a.add_sprite(db.STAR_COIN, 190 * 16, (GY - 7) * 16,
-                 spritedata=bytes([0,0,0,0,2,0]))
-
-    # Red coin ring in the abyss
-    a.add_red_coin_ring(195, GY - 4, group_id=0x76, pattern='circle')
-
-    # Goal area — floor is already continuous
-    a.add_sprite(db.GOAL_POLE, 242 * 16, (GY - 1) * 16)
-
-    # ══════════ AREA 2: SECRET EXIT — Engine Room ══════════
-    a2 = builder.add_area(2)
-    a2.set_tileset(1, db.TILESET_GHOST_HOUSE)
-    a2.set_background(bg2=db.BG_GHOST_HOUSE)
-    a2.set_time(150)
-    a2.add_zone(0, 0, 2500, 480, zone_id=0, music=db.MUSIC_GHOST_HOUSE,
-                cam_mode=0, visibility=36, model_dark=12)
-
-    SY = 22
-    a2.add_ground(0, SY, 80, 6, tileset=1)
-    a2.add_ground(0, SY - 7, 80, 2, tileset=1)
-    a2.add_entrance(0, 3 * 16, (SY - 2) * 16, etype=0)
-
-    a2.add_sprite(db.BROOZER, 10 * 16, (SY - 1) * 16)
-    a2.add_sprite(db.DRY_BONES, 18 * 16, (SY - 1) * 16)
-    fb_cw  = b'\x00\x00\x00\x00\x10\x06'
-    fb_ccw = b'\x00\x00\x00\x00\x00\x06'
-    a2.add_sprite(db.FIRE_BAR, 25 * 16, (SY - 4) * 16, spritedata=fb_cw)
-    a2.add_sprite(db.BOO, 30 * 16, (SY - 3) * 16)
-    a2.add_sprite(db.BOO, 35 * 16, (SY - 5) * 16)
-    a2.add_sprite(db.BROOZER, 40 * 16, (SY - 1) * 16)
-    a2.add_sprite(db.BOO, 45 * 16, (SY - 3) * 16)
-    a2.add_sprite(db.BIG_BOO, 50 * 16, (SY - 4) * 16)
-    a2.add_sprite(db.FIRE_BAR, 55 * 16, (SY - 4) * 16, spritedata=fb_ccw)
-    a2.add_sprite(db.DRY_BONES, 60 * 16, (SY - 1) * 16)
-
-    # Red Goal Pole
-    a2.add_sprite(db.GOAL_POLE, 70 * 16, (SY - 1) * 16,
-                  spritedata=bytes([0, 0, 16, 0, 0, 0]))
-    a2.add_ground(74, SY, 20, 6, tileset=1)
-
-    builder.save("output/ChaosStation/Stage/07-21.arc")
-    print("Created 07-21: The Phantom Skyship (+ secret exit)")
-
-
-def create_level_7_tower():
-    """7-Tower: Modify vanilla 07-22 with added hazards.
-    Area 1: vertical climb, zone at (768,864,512,1872). Add Fire Bars, Thwomps.
-    Area 2: boss room, zone at (288,416,448,224). Add flanking Fire Bars.
-    Area 3: post-checkpoint climb, zone at (768,752,512,1648). Add hazards.
-    Must set loaded_sprites so game loads the needed .arc files."""
-    import copy, os
-    from tools.u8archive import U8Archive
-    from tools.course_parser import parse_course_bin, serialize_course_bin, Sprite
-
-    with open('extracted files/Stage/07-22.arc', 'rb') as f:
-        arc = U8Archive.load(f.read())
-
-    SD = b'\x00\x00\x00\x00\x00\x00'
-    FB_CW  = b'\x00\x00\x00\x00\x10\x06'
-    FB_CCW = b'\x00\x00\x00\x00\x00\x06'
-
-    def spr(stype, x, y, sd=SD):
-        return Sprite(stype=stype, x=x, y=y, spritedata=sd, zone_id=0, extra_byte=0)
-
-    # ── Area 1: Tower Climb (zone x=768-1280, y=864-2736) ──
-    area1 = parse_course_bin(arc.get_file('course/course1.bin'))
-    new_sprites = list(area1.sprites)
-
-    # Fire Bars along the climb shaft — CW left side, CCW right side
-    for y_pos in [2600, 2200, 1800, 1400, 1000]:
-        new_sprites.append(spr(62, 850, y_pos, FB_CW))
-        new_sprites.append(spr(62, 1100, y_pos + 160, FB_CCW))
-
-    # Thwomps in the center at alternating heights
-    for y_pos in [2400, 1600, 1200]:
-        new_sprites.append(spr(47, 960, y_pos))
-
-    # Hammer Bros on platforms
-    new_sprites.append(spr(95, 880, 2000))
-    new_sprites.append(spr(95, 1050, 1400))
-
-    area1.sprites = new_sprites
-    area1.loaded_sprites = sorted(set(s.stype for s in new_sprites))
-    arc.set_file('course/course1.bin', serialize_course_bin(area1))
-
-    # ── Area 2: Boss Room (zone x=288-736, y=416-640) ──
-    area2 = parse_course_bin(arc.get_file('course/course2.bin'))
-    boss_sprites = list(area2.sprites)
-    boss_sprites.append(spr(62, 330, 570, FB_CW))   # left flank
-    boss_sprites.append(spr(62, 670, 570, FB_CCW))  # right flank
-    boss_sprites.append(spr(95, 350, 570))           # Hammer Bro left
-    boss_sprites.append(spr(95, 650, 570))           # Hammer Bro right
-    area2.sprites = boss_sprites
-    area2.loaded_sprites = sorted(set(s.stype for s in boss_sprites))
-    arc.set_file('course/course2.bin', serialize_course_bin(area2))
-
-    # ── Area 3: Post-checkpoint climb (zone x=768-1280, y=752-2400) ──
-    area3 = parse_course_bin(arc.get_file('course/course3.bin'))
-    new3 = list(area3.sprites)
-    for y_pos in [2200, 1800, 1400, 1000]:
-        new3.append(spr(62, 880, y_pos, FB_CW))
-        new3.append(spr(62, 1080, y_pos + 100, FB_CCW))
-    for y_pos in [2000, 1200]:
-        new3.append(spr(47, 960, y_pos))
-    new3.append(spr(95, 900, 1600))
-    area3.sprites = new3
-    area3.loaded_sprites = sorted(set(s.stype for s in new3))
-    arc.set_file('course/course3.bin', serialize_course_bin(area3))
-
-    data = arc.pack()
-    os.makedirs('output/ChaosStation/Stage', exist_ok=True)
-    with open('output/ChaosStation/Stage/07-22.arc', 'wb') as f:
-        f.write(data)
-    print(f'Saved: output/ChaosStation/Stage/07-22.arc ({len(data)} bytes)')
-    print('Modified 7-Tower with Fire Bars, Thwomps, Hammer Bros')
-
-
-def create_level_7_castle():
-    """7-Castle: Modify vanilla 07-24. Ludwig's stronghold.
-    Area 1: horizontal traversal, zone (1200,368,6448,321). Has Dry Bones,
-            Giant Dry Bones, Sledge Bros, Skewers already.
-    Area 2: boss room, zone (1568,368,1456,1296). Ludwig boss.
-    Must set loaded_sprites for new sprite types."""
-    import copy, os
-    from tools.u8archive import U8Archive
-    from tools.course_parser import parse_course_bin, serialize_course_bin, Sprite
-
-    with open('extracted files/Stage/07-24.arc', 'rb') as f:
-        arc = U8Archive.load(f.read())
-
-    SD = b'\x00\x00\x00\x00\x00\x00'
-    FB_CW  = b'\x00\x00\x00\x00\x10\x08'
-    FB_CCW = b'\x00\x00\x00\x00\x00\x08'
-
-    def spr(stype, x, y, sd=SD):
-        return Sprite(stype=stype, x=x, y=y, spritedata=sd, zone_id=0, extra_byte=0)
-
-    # ── Area 1: Castle Hallways (zone x=1200-7648, y=368-689) ──
-    area1 = parse_course_bin(arc.get_file('course/course1.bin'))
-    new_sprites = []
-    db_count = 0
-    for s in area1.sprites:
-        if s.stype == 118:  # Dry Bones → cycle Fire Bro/Hammer Bro/Sledge Bro
-            ns = copy.deepcopy(s)
-            ns.stype = [80, 95, 120][db_count % 3]
-            ns.spritedata = SD
-            new_sprites.append(ns)
-            db_count += 1
-        elif s.stype == 119:  # Giant Dry Bones → Sledge Bro
-            ns = copy.deepcopy(s)
-            ns.stype = 120
-            ns.spritedata = SD
-            new_sprites.append(ns)
-        else:
-            new_sprites.append(s)
-
-    # Fire Bars along the castle corridor
-    for i, x_pos in enumerate(range(1600, 7200, 450)):
-        sd = FB_CW if i % 2 == 0 else FB_CCW
-        new_sprites.append(spr(62, x_pos, 500, sd))
-
-    # Thwomps above the path
-    for x_pos in [2000, 3000, 4000, 5000, 6000, 7000]:
-        new_sprites.append(spr(47, x_pos, 380))
-
-    # Chain Chomps in wider sections
-    for x_pos in [2500, 3500, 4500, 5500, 6500]:
-        new_sprites.append(spr(146, x_pos, 580))
-
-    area1.sprites = new_sprites
-    area1.loaded_sprites = sorted(set(s.stype for s in new_sprites))
-    arc.set_file('course/course1.bin', serialize_course_bin(area1))
-
-    # ── Area 2: Boss Room (zone x=1568-3024, y=368-1664) ──
-    # Keep Ludwig intact, add flanking hazards.
-    area2 = parse_course_bin(arc.get_file('course/course2.bin'))
-    boss_sprites = list(area2.sprites)
-    boss_sprites.append(spr(62, 1650, 1500, FB_CW))    # left Fire Bar
-    boss_sprites.append(spr(62, 2900, 1500, FB_CCW))   # right Fire Bar
-    boss_sprites.append(spr(47, 2000, 1380))            # Thwomp left
-    boss_sprites.append(spr(47, 2600, 1380))            # Thwomp right
-    boss_sprites.append(spr(95, 1700, 1550))            # Hammer Bro left
-    boss_sprites.append(spr(95, 2800, 1550))            # Hammer Bro right
-    area2.sprites = boss_sprites
-    area2.loaded_sprites = sorted(set(s.stype for s in boss_sprites))
-    arc.set_file('course/course2.bin', serialize_course_bin(area2))
-
-    data = arc.pack()
-    os.makedirs('output/ChaosStation/Stage', exist_ok=True)
-    with open('output/ChaosStation/Stage/07-24.arc', 'wb') as f:
-        f.write(data)
-    print(f'Saved: output/ChaosStation/Stage/07-24.arc ({len(data)} bytes)')
-    print("Modified 7-Castle: Ludwig's Stronghold")
-
-
-def create_level_7_mushroom_houses():
-    """Placeholder for W7 mushroom houses."""
-    print("[W7] Mushroom Houses not yet built")
-
-
-def create_level_7_ambush():
-    """07-33/34/35: World 7 ambush arenas — sky-themed spring block encounters.
-    Each variant has a distinct layout. Keeps required sprites (controller,
-    Toad balloons, chest, Lakitu) and replaces spring block positions."""
-    import os
-    from tools.u8archive import U8Archive
-    from tools.course_parser import parse_course_bin, serialize_course_bin, Sprite
-
-    CONTROLLER   = 454  # Ambush Level Controller — must keep exactly as-is
-    TOAD_BALLOON = 185  # Reward balloons — must keep all
-    CHEST        = 203  # Prize chest — must keep
-    LAKITU       = 54   # Sky enemy
-    SPRING_BLOCK = 223  # Checkered spring block (platforms)
-
-    SD = b'\x00\x00\x00\x00\x00\x00'
-
-    def spr(stype, x, y, sd=SD):
-        return Sprite(stype=stype, x=x, y=y, spritedata=sd, zone_id=0, extra_byte=0)
-
-    def modify_ambush(src_name, dst_name, new_blocks, extra_enemies=None):
-        with open(f'extracted files/Stage/{src_name}', 'rb') as f:
-            arc = U8Archive.load(f.read())
-        course = parse_course_bin(arc.get_file('course/course1.bin'))
-
-        # Keep all non-spring-block sprites from vanilla (controller, balloons, chest, lakitu)
-        kept = [s for s in course.sprites if s.stype != SPRING_BLOCK]
-
-        # Add new spring block layout
-        for (x, y) in new_blocks:
-            kept.append(spr(SPRING_BLOCK, x, y))
-
-        # Add any extra enemies
-        if extra_enemies:
-            for (stype, x, y) in extra_enemies:
-                kept.append(spr(stype, x, y))
-
-        course.sprites = kept
-        arc.set_file('course/course1.bin', serialize_course_bin(course))
-        os.makedirs('output/ChaosStation/Stage', exist_ok=True)
-        with open(f'output/ChaosStation/Stage/{dst_name}', 'wb') as f:
-            f.write(arc.pack())
-        print(f'  Saved: {dst_name}')
-
-    # Arena pixel bounds: x=240-784, y=256-528
-    # Spring blocks form platforms; player bounces between them fighting Lakitu.
-
-    # --- Variant 1 (07-33): Zigzag ---
-    # Alternating high/low blocks across the arena — forces bouncing rhythm.
-    zigzag = [
-        # Low row (y=480)
-        (288, 480), (368, 480), (448, 480), (528, 480), (608, 480), (688, 480),
-        # High row (y=400)
-        (328, 400), (408, 400), (488, 400), (568, 400), (648, 400),
-    ]
-    modify_ambush('07-33.arc', '07-33.arc', zigzag)
-
-    # --- Variant 2 (07-34): Three Tiers ---
-    # Staircase ascending left-to-right across 3 heights.
-    # Player must climb up while Lakitu attacks from above.
-    tiers = [
-        # Bottom tier (y=480)
-        (256, 480), (304, 480), (352, 480), (400, 480),
-        # Mid tier (y=432)
-        (432, 432), (480, 432), (528, 432),
-        # Top tier (y=384)
-        (560, 384), (608, 384), (656, 384), (704, 384), (752, 384),
-    ]
-    modify_ambush('07-34.arc', '07-34.arc', tiers)
-
-    # --- Variant 3 (07-35): Two Lakitus, Dense Floor ---
-    # Packed spring block floor with a raised center platform.
-    # Two Lakitus attack simultaneously — chaotic sky battle.
-    dense = [
-        # Dense lower floor
-        (256, 480), (288, 480), (320, 480), (352, 480), (384, 480),
-        (416, 480), (448, 480), (480, 480), (512, 480), (544, 480),
-        (576, 480), (608, 480), (640, 480), (672, 480), (704, 480), (736, 480),
-        # Raised center platform
-        (448, 416), (480, 416), (512, 416), (544, 416), (576, 416),
-        # High corner blocks
-        (256, 384), (752, 384),
-    ]
-    # Second Lakitu on the left side
-    modify_ambush('07-35.arc', '07-35.arc', dense,
-                  extra_enemies=[(LAKITU, 320, 296)])
-
-    print("Created W7 ambush arenas (07-33/34/35)")
-
-
-def create_level_7_airship():
-    """Placeholder for W7 airship. Uses vanilla 07-38 for now."""
-    import os, shutil
-    src = 'extracted files/Stage/07-38.arc'
-    dst = 'output/ChaosStation/Stage/07-38.arc'
-    if os.path.exists(src):
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        shutil.copy2(src, dst)
-        print("[W7] Airship 07-38 not yet built — using vanilla")
-    else:
-        print("[W7] Airship 07-38 not found in extracted files")
+    print("Created 06-06: Fortress of Winds")
 
 
 def create_level_6_tower():
-    """6-Tower: Stormspire — Buffed vertical climb with W6 enemies.
-
-    Keeps vanilla structure (rotating blocks, moving platforms, Lemmy/Morton boss).
-    Replaces 3 Dry Bones -> Fire Bro / Hammer Bro / Sledge Bro.
-    Adds Fire Bars, Thwomps, and Chain Chomps throughout the climb.
-    Boss room gets flanking Fire Bars.
-    """
-    import copy, os
-    from tools.u8archive import U8Archive
-    from tools.course_parser import parse_course_bin, serialize_course_bin, Sprite
-
-    with open('extracted files/Stage/06-22.arc', 'rb') as f:
-        arc = U8Archive.load(f.read())
-
-    SD = b'\x00\x00\x00\x00\x00\x00'
-    FB_CW  = b'\x00\x00\x00\x00\x10\x06'   # fire bar clockwise, length 6
-    FB_CCW = b'\x00\x00\x00\x00\x00\x06'   # counter-clockwise, length 6
-
-    def spr(stype, x, y, sd=SD):
-        return Sprite(stype=stype, x=x, y=y, spritedata=sd, zone_id=0, extra_byte=0)
-
-    # ── Area 1: Tower Climb ──────────────────────────────────────────────
-    # Tower spans roughly x=430-850 px wide, y=400 (top) to y=3900 (bottom)
-    area1 = parse_course_bin(arc.get_file('course/course1.bin'))
-    new_sprites = []
-    db_count = 0
-    for s in area1.sprites:
-        if s.stype == 118:  # Dry Bones -> rotate Fire Bro / Hammer Bro / Sledge Bro
-            ns = copy.deepcopy(s)
-            ns.stype = [80, 95, 120][db_count % 3]
-            ns.spritedata = SD
-            new_sprites.append(ns)
-            db_count += 1
-        else:
-            new_sprites.append(s)
-
-    # Fire Bars — one CW + one CCW at each altitude, offset so they don't overlap
-    for y, x_cw, x_ccw in [
-        (3700, 528, 720), (3300, 560, 752), (2900, 528, 720),
-        (2500, 560, 704), (2100, 528, 720), (1700, 576, 688),
-        (1300, 560, 720), (900,  528, 704),
-    ]:
-        new_sprites.append(spr(62, x_cw,  y, FB_CW))
-        new_sprites.append(spr(62, x_ccw, y + 160, FB_CCW))
-
-    # Thwomps — center of the climb shaft at mid-heights
-    for y in [3500, 2700, 1900, 1100]:
-        new_sprites.append(spr(47, 640, y))
-
-    # Chain Chomps — lower third of climb
-    for x, y in [(512, 3800), (768, 3600), (528, 3200)]:
-        new_sprites.append(spr(146, x, y))
-
-    # Hammer Bros — upper section
-    for x, y in [(560, 2200), (720, 1400), (560, 600)]:
-        new_sprites.append(spr(95, x, y))
-
-    area1.sprites = new_sprites
-    area1.loaded_sprites = sorted(set(s.stype for s in new_sprites))
-    arc.set_file('course/course1.bin', serialize_course_bin(area1))
-
-    # ── Area 2: Boss Room ────────────────────────────────────────────────
-    # Zone at (288, 416, 432, 224). Keep the boss intact.
-    # Just flank the arena with rotating fire bars.
-    area2 = parse_course_bin(arc.get_file('course/course2.bin'))
-    boss_sprites = list(area2.sprites)
-    boss_sprites.append(spr(62, 330, 570, FB_CW))   # left flank
-    boss_sprites.append(spr(62, 670, 570, FB_CCW))  # right flank
-    boss_sprites.append(spr(95, 350, 570))           # Hammer Bro left
-    boss_sprites.append(spr(95, 650, 570))           # Hammer Bro right
-    area2.sprites = boss_sprites
-    area2.loaded_sprites = sorted(set(s.stype for s in boss_sprites))
-    arc.set_file('course/course2.bin', serialize_course_bin(area2))
-
-    data = arc.pack()
-    os.makedirs('output/ChaosStation/Stage', exist_ok=True)
-    with open('output/ChaosStation/Stage/06-22.arc', 'wb') as f:
-        f.write(data)
-    print(f'Saved: output/ChaosStation/Stage/06-22.arc ({len(data)} bytes)')
-    print('Modified 6-Tower: Stormspire')
+    print("[W6] Tower 06-22 not yet built — using vanilla")
 
 
 def create_level_6_castle():
-    """6-Castle: Morton's Keep — Remix vanilla 06-24 with W6 enemies.
-
-    Keeps vanilla structure (rotating platforms, spike balls, lava waves).
-    Replaces Dry Bones (118) -> cycle Fire Bro / Hammer Bro / Sledge Bro.
-    Adds Fire Bars and Thwomps throughout the horizontal traversal.
-    Boss room gets flanking Fire Bars around Morton's arena.
-    """
-    import copy, os
-    from tools.u8archive import U8Archive
-    from tools.course_parser import parse_course_bin, serialize_course_bin, Sprite
-
-    with open('extracted files/Stage/06-24.arc', 'rb') as f:
-        arc = U8Archive.load(f.read())
-
-    SD = b'\x00\x00\x00\x00\x00\x00'
-    FB_CW  = b'\x00\x00\x00\x00\x10\x08'   # clockwise, length 8
-    FB_CCW = b'\x00\x00\x00\x00\x00\x08'   # counter-clockwise, length 8
-
-    def spr(stype, x, y, sd=SD):
-        return Sprite(stype=stype, x=x, y=y, spritedata=sd, zone_id=0, extra_byte=0)
-
-    # ── Area 1: Castle Traversal ─────────────────────────────────────────
-    # Horizontal level, x ≈ 512-5300, y ≈ 400-700
-    area1 = parse_course_bin(arc.get_file('course/course1.bin'))
-    new_sprites = []
-    db_count = 0
-    for s in area1.sprites:
-        if s.stype == 118:   # Dry Bones -> Fire Bro / Hammer Bro / Sledge Bro
-            ns = copy.deepcopy(s)
-            ns.stype = [80, 95, 120][db_count % 3]
-            ns.spritedata = SD
-            new_sprites.append(ns)
-            db_count += 1
-        elif s.stype == 119: # Giant Dry Bones -> Sledge Bro
-            ns = copy.deepcopy(s)
-            ns.stype = 120
-            ns.spritedata = SD
-            new_sprites.append(ns)
-        else:
-            new_sprites.append(s)
-
-    # Fire Bars scattered along the traversal path — alternating CW/CCW
-    for i, x in enumerate(range(750, 5000, 350)):
-        sd = FB_CW if i % 2 == 0 else FB_CCW
-        new_sprites.append(spr(62, x, 490, sd))
-
-    # Thwomps above main path (must clear spike balls and rotating platforms)
-    for x in [950, 1550, 2150, 2750, 3350, 3950, 4550]:
-        new_sprites.append(spr(47, x, 384))
-
-    # Chain Chomps in open horizontal sections
-    for x in [1250, 2050, 2850, 3650, 4450]:
-        new_sprites.append(spr(146, x, 610))
-
-    area1.sprites = new_sprites
-    area1.loaded_sprites = sorted(set(s.stype for s in new_sprites))
-    arc.set_file('course/course1.bin', serialize_course_bin(area1))
-
-    # ── Area 2: Boss Room (Morton Koopa Jr.) ─────────────────────────────
-    # Zone 1 at (1568, 1408, 1456, 224). Keep Morton intact.
-    # Add Fire Bars flanking the arena edges.
-    area2 = parse_course_bin(arc.get_file('course/course2.bin'))
-    boss_sprites = list(area2.sprites)
-    boss_sprites.append(spr(62, 1650, 1500, FB_CW))    # left flank
-    boss_sprites.append(spr(62, 2900, 1500, FB_CCW))   # right flank
-    boss_sprites.append(spr(47, 2000, 1408))            # Thwomp left
-    boss_sprites.append(spr(47, 2600, 1408))            # Thwomp right
-    area2.sprites = boss_sprites
-    area2.loaded_sprites = sorted(set(s.stype for s in boss_sprites))
-    arc.set_file('course/course2.bin', serialize_course_bin(area2))
-
-    data = arc.pack()
-    os.makedirs('output/ChaosStation/Stage', exist_ok=True)
-    with open('output/ChaosStation/Stage/06-24.arc', 'wb') as f:
-        f.write(data)
-    print(f'Saved: output/ChaosStation/Stage/06-24.arc ({len(data)} bytes)')
-    print("Modified 6-Castle: Morton's Keep")
+    print("[W6] Castle 06-24 not yet built — using vanilla")
 
 
 def create_level_6_mushroom_houses():
@@ -11104,3007 +8845,11 @@ def create_level_6_ambush():
 
 
 def create_level_6_cannon():
-    """6-Cannon: Summit Blitz — Gauntlet run to the warp cannon.
-
-    Modifies vanilla 06-36 (which already has the zone, entrance, and
-    cannon sprite). Clears everything except the warp cannon and essential
-    zone mechanics, then adds a W6 gauntlet in the run-up:
-    Chain Chomps, Fire Bars, Thwomps, Hammer Bros, Bullet Bills.
-    The cannon at the end blasts to World 8.
-    """
-    import copy, os
-    from tools.u8archive import U8Archive
-    from tools.course_parser import parse_course_bin, serialize_course_bin, Sprite
-
-    with open('extracted files/Stage/06-36.arc', 'rb') as f:
-        arc = U8Archive.load(f.read())
-
-    area = parse_course_bin(arc.get_file('course/course1.bin'))
-
-    SD = b'\x00\x00\x00\x00\x00\x00'
-    FB_CW  = b'\x00\x00\x00\x00\x10\x06'
-    FB_CCW = b'\x00\x00\x00\x00\x00\x06'
-
-    def spr(stype, x, y, sd=SD):
-        return Sprite(stype=stype, x=x, y=y, spritedata=sd, zone_id=0, extra_byte=0)
-
-    # Keep all original sprites EXCEPT strip nothing — just add on top.
-    # Zone: x=256-2048, y=264-776. Ground is approximately y=660.
-    # Cannon is at x=920. Run-up gauntlet spans x=350-870.
-    keep_sprites = list(area.sprites)  # keep vanilla cannon + zone controllers
-
-    # Gauntlet: six tightly-spaced hazard clusters
-    gauntlet = [
-        # (stype, x, y, sd)
-        (146, 370, 650, SD),           # Chain Chomp 1
-        (62,  420, 560, FB_CW),        # Fire Bar CW
-        (47,  480, 480, SD),           # Thwomp
-        (95,  540, 640, SD),           # Hammer Bro
-        (62,  590, 560, FB_CCW),       # Fire Bar CCW
-        (146, 640, 650, SD),           # Chain Chomp 2
-        (47,  700, 480, SD),           # Thwomp
-        (62,  750, 560, FB_CW),        # Fire Bar CW
-        (95,  800, 640, SD),           # Hammer Bro
-        (62,  850, 560, FB_CCW),       # Fire Bar CCW
-        (120, 870, 630, SD),           # Sledge Bro right before cannon
-    ]
-
-    for stype, x, y, sd in gauntlet:
-        keep_sprites.append(spr(stype, x, y, sd))
-
-    area.sprites = keep_sprites
-    area.loaded_sprites = sorted(set(s.stype for s in keep_sprites))
-    arc.set_file('course/course1.bin', serialize_course_bin(area))
-
-    data = arc.pack()
-    os.makedirs('output/ChaosStation/Stage', exist_ok=True)
-    with open('output/ChaosStation/Stage/06-36.arc', 'wb') as f:
-        f.write(data)
-    print(f'Saved: output/ChaosStation/Stage/06-36.arc ({len(data)} bytes)')
-    print('Created 06-36: Summit Blitz (W6 Cannon)')
+    print("[W6] Cannon 06-36 not yet built — using vanilla")
 
 
 def create_level_6_airship():
     print("[W6] Airship 06-38 not yet built — using vanilla")
-
-
-# ═══════════════════════════════════════════════════════════════════
-#  WORLD 8 — "Inferno's End"
-# ═══════════════════════════════════════════════════════════════════
-
-def create_level_8_1():
-    """8-1: Scorched Entry — open lava fields, intro to the final world.
-    Three sections: lava pit crossing → fire bar corridor → lava lake finale.
-    """
-    from tools.level_builder import LevelBuilder
-    import tools.sprite_db as db
-
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_LAVA)
-    a.set_tileset(1, db.TILESET_KOOPA_OUT)
-    a.set_background(db.BG_LAVA)
-    a.set_time(400)
-    GY = 26
-    LAVA_Y = (GY + 3) * 16   # lava surface 3 tiles below ground
-    LAVA_SD = b'\x00\x00\x00\x00\x01\x00'  # waves + solid kill zone
-    POD_SD  = b'\x00\x00\x00\x00\x00\x02'  # delay=2 like vanilla
-    GEY_SD  = b'\x00\x00\x00\x00\x00\x21'  # medium eruption, starts erupting
-    fb_cw   = b'\x00\x00\x00\x00\x10\x05'
-    fb_ccw  = b'\x00\x00\x00\x00\x00\x05'
-    a.add_zone(0, 0, 7840, 640, zone_id=0, music=db.MUSIC_LAVA, cam_mode=0, visibility=16)
-
-    # Spawn platform
-    a.add_ground(0, GY, 12, 5, tileset=1)
-    a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 94 * 16, (GY - 1) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-
-    # Lava floor spanning the whole level (flat top)
-    a.add_sprite(db.LAVA_FILL, 0, LAVA_Y, spritedata=LAVA_SD)
-
-    # ══ SECTION A: Lava pit crossing (X 14–93) — DENSE ══
-    plat_a = [(14,GY,5),(23,GY,4),(31,GY-2,4),(39,GY,5),(48,GY,4),(56,GY-2,4),(64,GY,5),(73,GY,4),(81,GY,5)]
-    for px, py, pw in plat_a:
-        a.add_ground(px, py, pw, 5, tileset=1)
-    # Podoboos — placed ABOVE lava, where they jump to (3 tiles above ground)
-    for lbx in [18, 27, 35, 44, 52, 60, 68, 77]:
-        a.add_sprite(db.PODOBOO, lbx * 16, (GY - 3) * 16, spritedata=POD_SD)
-    # Fire Piranhas in every gap
-    for fpx in [20, 34, 50, 62, 78]:
-        a.add_sprite(db.FIRE_PIRANHA_PLANT, fpx * 16, (GY - 4) * 16)
-    # Crowbers — dense flock
-    for cx in [16, 28, 38, 48, 58, 70, 82]:
-        a.add_sprite(db.CROWBER, cx * 16, (GY - 8) * 16)
-    # Lava Geysers — erupting from lava surface
-    for gx in [19, 33, 46, 58, 70, 80]:
-        a.add_sprite(db.LAVA_GEYSER, gx * 16, LAVA_Y, spritedata=GEY_SD)
-    # Mecha-Koopas on platforms
-    for mx in [16, 40, 65, 83]:
-        a.add_sprite(db.MECHAKOOPA, mx * 16, (GY - 1) * 16)
-    # Fire Bros on elevated platforms
-    a.add_ground(30, GY - 6, 4, 3, tileset=1)
-    a.add_sprite(db.FIRE_BRO, 31 * 16, (GY - 7) * 16)
-    a.add_ground(62, GY - 6, 4, 3, tileset=1)
-    a.add_sprite(db.FIRE_BRO, 63 * 16, (GY - 7) * 16)
-    # Star Coin #1 — over a lava gap
-    a.add_sprite(db.STAR_COIN, 44 * 16, (GY - 4) * 16, spritedata=bytes([0,0,0,0,0,0]))
-
-    # Midway flag platform
-    a.add_ground(88, GY, 10, 5, tileset=1)
-    a.add_sprite(db.MIDWAY_FLAG, 94 * 16, (GY - 1) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-    a.add_sprite(db.MECHAKOOPA, 91 * 16, (GY - 1) * 16)
-    a.add_sprite(db.DRY_BONES, 95 * 16, (GY - 1) * 16)
-
-    # ══ SECTION B: Fire Bar corridor (X 100–180) — tight ══
-    CY = GY - 6
-    a.add_ground(100, GY, 83, 5, tileset=1)
-    a.add_ground(100, CY - 1, 83, 3, tileset=1)  # solid ceiling, no gaps
-    for fbx in range(107, 175, 8):
-        a.add_sprite(db.FIRE_BAR, fbx * 16, (GY - 3) * 16, spritedata=fb_cw)
-    for fbx in range(111, 179, 8):
-        a.add_sprite(db.FIRE_BAR, fbx * 16, (GY - 4) * 16, spritedata=fb_ccw)
-    for mx in [105, 120, 135, 150, 165]:
-        a.add_sprite(db.MECHAKOOPA, mx * 16, (GY - 1) * 16)
-    for dx in [112, 140, 168]:
-        a.add_sprite(db.DRY_BONES, dx * 16, (GY - 1) * 16)
-    # Star Coin #2 — floating inside the corridor, high up between fire bar rotations
-    # Player must duck under fire bars at the right moment to grab it
-    a.add_sprite(db.STAR_COIN, 155 * 16, (GY - 4) * 16, spritedata=bytes([0,0,0,0,1,0]))
-
-    # ══ SECTION C: Lava lake finale (X 186–325) — brutal ══
-    lake = [
-        (186,GY,6),(197,GY-3,4),(206,GY,5),(216,GY-2,4),(225,GY,6),
-        (236,GY-3,4),(245,GY,5),(255,GY-2,4),(264,GY,6),(275,GY-3,4),
-        (285,GY,8),(298,GY,14),
-    ]
-    for px, py, pw in lake:
-        a.add_ground(px, py, pw, 5, tileset=1)
-    # Podoboos everywhere in lake — above lava, threatening platforms
-    for lbx in [193, 203, 213, 222, 233, 242, 252, 261, 272, 282]:
-        a.add_sprite(db.PODOBOO, lbx * 16, (GY - 3) * 16, spritedata=POD_SD)
-    # Dense Crowbers
-    for cx in [190, 205, 218, 230, 244, 257, 268, 280, 294]:
-        a.add_sprite(db.CROWBER, cx * 16, (GY - 8) * 16)
-    # Mecha-Koopas and Fire Bros on every other platform
-    for mx in [188, 208, 228, 247, 267, 287]:
-        a.add_sprite(db.MECHAKOOPA, mx * 16, (GY - 1) * 16)
-    for fbx in [200, 220, 240, 260, 278]:
-        a.add_sprite(db.FIRE_BRO, fbx * 16, (GY - 4) * 16)
-    # Active Lava Geysers in lake
-    for gx in [195, 210, 224, 238, 254, 270, 284]:
-        a.add_sprite(db.LAVA_GEYSER, gx * 16, LAVA_Y, spritedata=GEY_SD)
-    # Volcano rocks raining from sky
-    a.add_sprite(db.VOLCANO_ROCK, 215 * 16, 4 * 16)
-    a.add_sprite(db.VOLCANO_ROCK, 245 * 16, 4 * 16)
-    a.add_sprite(db.VOLCANO_ROCK, 275 * 16, 4 * 16)
-    # Star Coin #3 — floating visibly over the lava gap between platforms (risky jump)
-    a.add_sprite(db.STAR_COIN, 272 * 16, (GY - 9) * 16, spritedata=bytes([0,0,0,0,2,0]))
-
-    # Bridge C→D (gap was 24 tiles: x=312..334)
-    a.add_ground(312, GY,     8, 5, tileset=1)   # x=312-319
-    a.add_ground(322, GY - 3, 7, 5, tileset=1)   # x=322-328, gap=2 ✓
-    a.add_ground(329, GY,     6, 5, tileset=1)   # x=329-334, gap=0 ✓ → connects to 335
-
-    # ══ SECTION D: Banzai Bill Alley (X 335–460) ══
-    # Platforms with gaps, Banzai Bills from right walls, Podoboos + Geysers
-    a.add_ground(335, GY, 8, 5, tileset=1)
-    a.add_ground(348, GY-3, 5, 5, tileset=1)
-    a.add_ground(358, GY, 7, 5, tileset=1)
-    a.add_ground(370, GY-4, 5, 5, tileset=1)
-    a.add_ground(380, GY, 8, 5, tileset=1)
-    a.add_ground(393, GY-3, 5, 5, tileset=1)
-    a.add_ground(403, GY, 7, 5, tileset=1)
-    a.add_ground(415, GY-4, 5, 5, tileset=1)
-    a.add_ground(425, GY, 8, 5, tileset=1)
-    a.add_ground(438, GY, 5, 5, tileset=1)
-    # Bridge D→Goal (gap was 13 tiles: x=443..454)
-    a.add_ground(443, GY, 12, 5, tileset=1)      # x=443-454, lands directly into x=455 ✓
-    # Banzai Bill Launchers — staggered X so bills are offset in time, not a solid wall
-    # Low launcher fires ground-level bills; high launcher fires sky-level bills
-    # Mid-height gap (~GY-5) lets player dash through between the two streams
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 443 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 449 * 16, (GY - 9) * 16)
-    # Podoboos above lava
-    for lbx in [339, 354, 366, 377, 390, 400, 412, 422, 435]:
-        a.add_sprite(db.PODOBOO, lbx * 16, (GY - 3) * 16, spritedata=POD_SD)
-    # Active geysers
-    for gx in [342, 356, 368, 382, 395, 406, 418, 428]:
-        a.add_sprite(db.LAVA_GEYSER, gx * 16, LAVA_Y, spritedata=GEY_SD)
-    # Fire Bros and Mecha-Koopas on platforms
-    for fbx in [350, 372, 395, 417, 437]:
-        a.add_sprite(db.FIRE_BRO, fbx * 16, (GY - 4) * 16)
-    for mx in [337, 360, 382, 405, 427]:
-        a.add_sprite(db.MECHAKOOPA, mx * 16, (GY - 1) * 16)
-    # Dense Crowbers above
-    for cx in [340, 358, 375, 392, 408, 424, 442]:
-        a.add_sprite(db.CROWBER, cx * 16, (GY - 9) * 16)
-    # Volcano rocks raining down
-    a.add_sprite(db.VOLCANO_ROCK, 360 * 16, 2 * 16)
-    a.add_sprite(db.VOLCANO_ROCK, 395 * 16, 2 * 16)
-    a.add_sprite(db.VOLCANO_ROCK, 428 * 16, 2 * 16)
-    # Fire Bars guarding the final stretch
-    a.add_sprite(db.FIRE_BAR, 408 * 16, GY * 16, spritedata=fb_cw)
-    a.add_sprite(db.FIRE_BAR, 420 * 16, GY * 16, spritedata=fb_ccw)
-    a.add_sprite(db.FIRE_BAR, 432 * 16, GY * 16, spritedata=fb_cw)
-
-    # End platform and goal — clear landing zone past the Banzai Bill launchers
-    a.add_ground(455, GY, 25, 5, tileset=1)
-    a.add_sprite(db.GOAL_POLE, 470 * 16, (GY - 1) * 16)
-
-    builder.save('output/ChaosStation/Stage/08-01.arc')
-    print('Created 8-1: Scorched Entry')
-
-
-def create_level_8_2():
-    """8-2: Poison Depths — static poison pits, narrow platform crossings.
-
-    Mechanic: Deep poison pits (static — no rise) separate platforms.
-    Danger comes from enemies pushing you off narrow bridges into the pits:
-      - Dry Bones revive and keep chasing
-      - Giant Dry Bones are wide and block narrow bridges
-      - Bob-ombs explode on bridges, knocking you in
-      - Buzzy Beetles drop from ceiling onto your path
-
-    Section A: Wide platforms, intro pits — learn the danger of falling in.
-    Section B: Narrow bridges (3-4 tiles), heavy Dry Bones traffic.
-    Section C: Giant Dry Bones gauntlet — wide enemies on narrow spans.
-    Section D: Final mix — Thwomps + enemies + tightest bridges.
-    Secret exit: hidden pipe in a raised alcove off a mid-level platform.
-    """
-    from tools.level_builder import LevelBuilder
-    import tools.sprite_db as db
-
-    builder = LevelBuilder()
-    GY  = 20   # main walkable floor row
-    CY  = 2    # cave ceiling row
-    PIT = 28   # poison surface row — pits expose this, platforms stay above it
-
-    def ey(row): return (row - 1) * 16
-
-    # Static poison (mode=0), flat top (n10=8) — fills zone from PIT row downward.
-    POISON_SD = b'\x00\x00\x00\x00\x08\x00'
-
-    # ─── AREA 1 ─────────────────────────────────────────────────────────────
-    a1 = builder.add_area(1)
-    a1.set_tileset(0, db.TILESET_STANDARD)
-    a1.set_tileset(1, db.TILESET_CAVE)
-    a1.set_background(db.BG_UNDERGROUND)
-    a1.set_time(400)
-    a1.add_zone(0, 0, 6880, 640, zone_id=0, music=db.MUSIC_UNDERGROUND,
-                cam_mode=0, visibility=16)
-
-    a1.add_ground(0, CY, 430, 3, tileset=1)   # ceiling across entire level
-
-    # Spawn platform + entrance
-    a1.add_ground(0, GY, 13, 5, tileset=1)
-    a1.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a1.add_entrance(1, 109 * 16, (GY - 1) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-
-    # Poison fills the zone from row PIT downward — visible in every pit gap
-    a1.add_sprite(db.POISON_FILL, 5 * 16, PIT * 16, spritedata=POISON_SD)
-
-    # ══ SECTION A: Wide platforms, 6-tile pits — learn the hazard (X 15–110) ══
-    plats_a = [
-        (15, GY, 9), (30, GY, 9), (45, GY, 9),
-        (60, GY, 9), (75, GY, 9), (90, GY, 11),
-    ]
-    for px, py_, pw in plats_a:
-        a1.add_ground(px, py_, pw, 5, tileset=1)
-
-    # Star Coin #1 — floating over the 3rd pit (x=54), accessible by jumping from x=53
-    a1.add_sprite(db.STAR_COIN, 57 * 16, (GY - 3) * 16,
-                  spritedata=bytes([0, 0, 0, 0, 0, 0]))
-
-    for dx in [17, 32, 47, 62, 77, 92]:
-        a1.add_sprite(db.DRY_BONES, dx * 16, ey(GY))
-    for gdx in [36, 66]:
-        a1.add_sprite(db.GIANT_DRY_BONES, gdx * 16, ey(GY))
-    # Spinies hidden BEHIND Dry Bones — player sees the Dry Bones first, walks into Spiny
-    for sx in [19, 49, 79]:
-        a1.add_sprite(db.SPINY, sx * 16, ey(GY))
-    # Spike Tops on ceiling — slow but unstompable, drop down when player is below
-    for stx in [22, 52, 82]:
-        a1.add_sprite(db.SPIKE_TOP, stx * 16, (CY + 3) * 16)
-    # Upside-Down Spinies tucked above the pits — nearly invisible until they drop
-    for udx in [27, 57, 87]:
-        a1.add_sprite(db.UPSIDE_DOWN_SPINY, udx * 16, (CY + 3) * 16)
-
-    # Midway flag
-    a1.add_ground(103, GY, 10, 5, tileset=1)
-    a1.add_sprite(db.MIDWAY_FLAG, 109 * 16, (GY - 1) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-    # ══ SECTION B: Narrow bridges (3-4 tiles) — Bob-ombs + Dry Bones (X 115–200) ══
-    bridges_b = [
-        (115, GY,  4), (123, GY,  4), (131, GY,  4),
-        (139, GY,  4), (147, GY,  4), (155, GY, 10),
-    ]
-    for bx, by_, bw in bridges_b:
-        a1.add_ground(bx, by_, bw, 5, tileset=1)
-
-    # Elevated rest platform — SECRET ALCOVE above main path here
-    # Alcove: hidden room above x=155 platform, accessed by jumping through false ceiling
-    a1.add_ground(156, GY - 7, 9, 3, tileset=1)   # alcove floor
-    a1.add_ground(156, CY + 3, 1, GY - 7 - CY - 3 - 1, tileset=1)  # left sealing wall
-    a1.add_sprite(db.STAR_COIN, 159 * 16, (GY - 8) * 16,
-                  spritedata=bytes([0, 0, 0, 0, 1, 0]))
-    a1.add_pipe(162, GY - 7, height=3)
-    a1.add_entrance(2, 163 * 16, (GY - 7) * 16,
-                    etype=db.ENTRANCE_PIPE_DOWN, zone_id=0,
-                    dest_area=2, dest_entrance=3)
-
-    for dx in [116, 124, 132, 140, 148, 157]:
-        a1.add_sprite(db.DRY_BONES, dx * 16, ey(GY))
-    for bx in [117, 125, 133, 141, 149]:
-        a1.add_sprite(db.BOB_OMB, bx * 16, ey(GY))
-    # Spinies at the END of bridges — just as you land, a Spiny is waiting
-    for sx in [118, 134, 150]:
-        a1.add_sprite(db.SPINY, sx * 16, ey(GY))
-    # Amps hovering at player chest height over the middle of narrow bridges
-    # Forces the player to crouch-jump or arc over them — very tight on a 4-tile span
-    for ax in [120, 128, 136, 144]:
-        a1.add_sprite(db.AMP, ax * 16, (GY - 1) * 16)
-    # Spike Tops at bridge ends — can't stomp, blocks the landing spot
-    for stx in [122, 138]:
-        a1.add_sprite(db.SPIKE_TOP, stx * 16, ey(GY))
-    for cbx in [118, 126, 134, 142, 150, 158, 163]:
-        a1.add_sprite(db.BUZZY_BEETLE, cbx * 16, (CY + 3) * 16)
-
-    # ══ SECTION C: Giant Dry Bones gauntlet — wider pits, bulky enemies (X 167–280) ══
-    plats_c = [
-        (167, GY,  8), (180, GY,  8), (193, GY,  5),
-        (203, GY,  8), (216, GY,  8), (229, GY,  8),
-        (242, GY,  5), (252, GY,  8), (265, GY, 11),
-    ]
-    for px, py_, pw in plats_c:
-        a1.add_ground(px, py_, pw, 5, tileset=1)
-
-    # Star Coin #3 — on a platform guarded by two Giant Dry Bones
-    a1.add_sprite(db.STAR_COIN, 256 * 16, (GY - 2) * 16,
-                  spritedata=bytes([0, 0, 0, 0, 2, 0]))
-    a1.add_sprite(db.GIANT_DRY_BONES, 254 * 16, ey(GY))
-    a1.add_sprite(db.GIANT_DRY_BONES, 258 * 16, ey(GY))
-
-    for gdx in [169, 182, 205, 218, 231, 267]:
-        a1.add_sprite(db.GIANT_DRY_BONES, gdx * 16, ey(GY))
-    for dx in [195, 244]:
-        a1.add_sprite(db.DRY_BONES, dx * 16, ey(GY))
-    for bx in [170, 183, 206, 232]:
-        a1.add_sprite(db.BOB_OMB, bx * 16, ey(GY))
-    # Spinies mixed in with Giant Dry Bones — Giant blocks your view of the Spiny behind it
-    for sx in [173, 209, 234, 269]:
-        a1.add_sprite(db.SPINY, sx * 16, ey(GY))
-    # Upside-Down Spinies over the pit gaps — drop spines down into the jumps
-    for udx in [178, 201, 214, 227, 250, 264]:
-        a1.add_sprite(db.UPSIDE_DOWN_SPINY, udx * 16, (CY + 3) * 16)
-    # Spike Tops on platforms — slow unstompable walker blocks your path
-    for stx in [186, 220, 245]:
-        a1.add_sprite(db.SPIKE_TOP, stx * 16, ey(GY))
-
-    # ══ SECTION D: Thwomp gauntlet + narrow bridges — final sprint (X 278–400) ══
-    plats_d = [
-        (278, GY,  4), (286, GY,  4), (294, GY,  4), (302, GY,  4),
-        (310, GY,  8), (323, GY,  4), (331, GY,  4), (339, GY,  4),
-        (347, GY,  8), (360, GY,  4), (368, GY,  4), (376, GY, 12),
-    ]
-    for px, py_, pw in plats_d:
-        a1.add_ground(px, py_, pw, 5, tileset=1)
-
-    # Thwomps hovering over certain platforms in section D (drop when player passes)
-    for tx in [280, 296, 325, 341, 362, 370]:
-        a1.add_sprite(db.THWOMP, tx * 16, (CY + 4) * 16)
-
-    for dx in [279, 287, 295, 303, 311, 324, 332, 340, 349, 361, 369, 378]:
-        a1.add_sprite(db.DRY_BONES, dx * 16, ey(GY))
-    for gdx in [313, 350, 380]:
-        a1.add_sprite(db.GIANT_DRY_BONES, gdx * 16, ey(GY))
-    # Amps in the gaps between Thwomp bridges — you must navigate past them WHILE
-    # watching for the Thwomp above. Can't stomp, can't walk through.
-    for ax in [283, 299, 327, 343, 364]:
-        a1.add_sprite(db.AMP, ax * 16, (GY - 1) * 16)
-    # Spinies on the 8-tile rest platforms — no safe spot to relax
-    for sx in [312, 348, 377]:
-        a1.add_sprite(db.SPINY, sx * 16, ey(GY))
-    # Spike Tops on narrow 4-tile spans — blocking the already-tight crossing
-    for stx in [280, 294, 331, 339]:
-        a1.add_sprite(db.SPIKE_TOP, stx * 16, ey(GY))
-    for cbx in [281, 290, 298, 306, 316, 328, 337, 345, 354, 366, 375, 383]:
-        a1.add_sprite(db.BUZZY_BEETLE, cbx * 16, (CY + 3) * 16)
-
-    # Goal
-    a1.add_ground(390, GY, 18, 5, tileset=1)
-    a1.add_sprite(db.GOAL_POLE, 401 * 16, (GY - 1) * 16)
-
-    # ─── AREA 2: Secret exit — poison pit gauntlet, shorter (3200px) ────────
-    SY  = 18    # floor row in area 2
-    SCY = 2     # ceiling
-
-    a2 = builder.add_area(2)
-    a2.set_tileset(0, db.TILESET_STANDARD)
-    a2.set_tileset(1, db.TILESET_CAVE)
-    a2.set_background(db.BG_UNDERGROUND)
-    a2.set_time(300)
-    a2.add_zone(0, 0, 3200, 640, zone_id=0, music=db.MUSIC_UNDERGROUND,
-                cam_mode=0, visibility=16)
-
-    a2.add_ground(0, SCY, 200, 3, tileset=1)
-    a2.add_ground(0, SY, 12, 5, tileset=1)
-    a2.add_entrance(3, 5 * 16, (SY - 2) * 16,
-                    etype=db.ENTRANCE_PIPE_UP, zone_id=0,
-                    dest_area=1, dest_entrance=2)
-    a2.add_sprite(db.POISON_FILL, 0, (SY + 8) * 16, spritedata=POISON_SD)
-
-    # Area 2: alternating platforms and pits, increasing enemy pressure
-    plats_2 = [
-        (14, SY, 9), (28, SY, 5), (38, SY, 9), (52, SY, 5),
-        (62, SY, 9), (76, SY, 5), (86, SY, 9), (100, SY, 5),
-        (110, SY, 9), (124, SY, 5), (134, SY, 9), (148, SY, 14),
-    ]
-    for px, py_, pw in plats_2:
-        a2.add_ground(px, py_, pw, 5, tileset=1)
-
-    for dx in [15, 39, 63, 87, 111, 135, 150]:
-        a2.add_sprite(db.DRY_BONES, dx * 16, ey(SY))
-    for gdx in [29, 53, 77, 101, 125]:
-        a2.add_sprite(db.GIANT_DRY_BONES, gdx * 16, ey(SY))
-    for bx in [16, 40, 64, 88, 112, 136]:
-        a2.add_sprite(db.BOB_OMB, bx * 16, ey(SY))
-    for sx in [17, 41, 65, 89, 113]:
-        a2.add_sprite(db.SPINY, sx * 16, ey(SY))
-    for ax in [31, 55, 79, 103, 127]:
-        a2.add_sprite(db.AMP, ax * 16, (SY - 1) * 16)
-    for stx in [18, 43, 67]:
-        a2.add_sprite(db.SPIKE_TOP, stx * 16, ey(SY))
-    for udx in [26, 50, 74, 98, 122, 146]:
-        a2.add_sprite(db.UPSIDE_DOWN_SPINY, udx * 16, (SCY + 3) * 16)
-    for cbx in [18, 32, 45, 58, 70, 84, 95, 108, 118, 130, 142, 155]:
-        a2.add_sprite(db.BUZZY_BEETLE, cbx * 16, (SCY + 3) * 16)
-
-    # Secret-exit runout: give clear solid ground AFTER the red pole.
-    a2.add_ground(162, SY, 24, 5, tileset=1)
-    a2.add_secret_goal(158, SY - 1)
-
-    builder.save('output/ChaosStation/Stage/08-02.arc')
-    print('Created 8-2: Poison Depths (static pits, narrow bridges, enemy pressure)')
-
-
-def create_level_8_3():
-    """8-3: Meteor Storm — floating lava-cliff platforms under a barrage of meteors.
-
-    Distinct from 8-1:
-      - Tileset: LAVA_CLIFF (rocky cliffs, not the outdoor Koopa bricks of 8-1)
-      - Music: athletic sky theme (8-1 uses lava overworld) — reads as open-sky bombardment
-      - Enemies: Podoboos + Fire Piranhas + Dry Bones + Mecha-Koopas + Amps (no flyers/Bob-ombs that dive into lava)
-      - No Fire Bros (those belong to 8-1) — Sledge Bros ground-pound the platforms
-      - No Geysers (8-1 signature) — dense Volcano Rock rain is the primary hazard
-      - No Banzai Bills mid-level — Para-Bob-ombs parachute from the sky instead
-      - Gaps fixed: bridge platforms added between every section transition
-      - Zone width must cover the goal (was 7840px / 490 tiles; pole sat past scroll bound)
-
-    Section A: Flame Jets + Sledge Bros + meteor intro
-    Section B: Open sky — dense meteor lanes + Para-Bob-ombs falling
-    Section C: Fire Snake gauntlet on narrow ledges
-    Section D: King Bill finale + meteor wall + Sledge Bros
-    """
-    from tools.level_builder import LevelBuilder
-    import tools.sprite_db as db
-
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_LAVA)
-    a.set_tileset(1, db.TILESET_LAVA_CLIFF)
-    a.set_background(db.BG_LAVA)
-    a.set_time(400)
-    GY = 26
-
-    def ey(row): return (row - 1) * 16
-
-    POD_SD = b'\x00\x00\x00\x00\x00\x02'  # Podoboo delay (vanilla-style) — they live in the lava
-    LAVA_SURFACE_Y = (GY + 3) * 16       # must match LAVA_FILL placement
-
-    # 8320 px = 520 tiles — goal at x=504 and end ground through ~511 must stay inside the zone
-    # (7840 px only reached tile 490, so the camera stopped before the pole).
-    a.add_zone(0, 0, 8320, 640, zone_id=0, music=db.MUSIC_SKY, cam_mode=0, visibility=16)
-
-    # Spawn platform
-    a.add_ground(0, GY, 12, 5, tileset=1)
-    a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 110 * 16, (GY - 1) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-    # Lava sea far below (flat top — kill zone; Podoboos anchor from the surface)
-    a.add_sprite(db.LAVA_FILL, 0, LAVA_SURFACE_Y, spritedata=b'\x00\x00\x00\x00\x01\x00')
-
-    # ══ SECTION A: Flame Jets + Sledge Bros + first meteor wave (X 14–102) ══
-    plat_a = [
-        (14,GY,7),(25,GY-3,5),(34,GY,7),(44,GY-4,4),(52,GY,8),
-        (64,GY-3,5),(74,GY,7),(85,GY-4,4),(94,GY,8),
-    ]
-    for px, py, pw in plat_a:
-        a.add_ground(px, py, pw, 5, tileset=1)
-    # Flame Jets shooting up from lava
-    for fjx in [20, 31, 40, 58, 70, 80, 91]:
-        a.add_sprite(db.FLAME_JET_LARGE, fjx * 16, LAVA_SURFACE_Y)
-    # Podoboos — jump from lava in every major gap (same anchor idea as 8-1)
-    for lbx in [22, 29, 37, 46, 60, 70, 79, 90]:
-        a.add_sprite(db.PODOBOO, lbx * 16, (GY - 3) * 16, spritedata=POD_SD)
-    # Sledge Bros on platforms — heavy ground-pounders, very different feel from Fire Bros
-    a.add_sprite(db.SLEDGE_BRO, 28 * 16, ey(GY - 3))   # platform (25,GY-3)
-    a.add_sprite(db.SLEDGE_BRO, 55 * 16, ey(GY))        # platform (52,GY)
-    a.add_sprite(db.SLEDGE_BRO, 66 * 16, ey(GY - 3))   # platform (64,GY-3)
-    a.add_sprite(db.SLEDGE_BRO, 95 * 16, ey(GY))        # platform (94,GY)
-    # Heat-themed ground patrol — x on platform spans only (see plat_a)
-    for mx in [16, 38, 61, 96]:
-        a.add_sprite(db.MECHAKOOPA, mx * 16, (GY - 1) * 16)
-    for dx in [35, 46, 66]:
-        a.add_sprite(db.DRY_BONES, dx * 16, (GY - 1) * 16)
-    a.add_sprite(db.FIRE_PIRANHA_PLANT, 41 * 16, (GY - 4) * 16)
-    a.add_sprite(db.FIRE_PIRANHA_PLANT, 77 * 16, (GY - 4) * 16)
-    # First meteor wave — sparse intro
-    for vx in [22, 42, 68, 88]:
-        a.add_sprite(db.VOLCANO_ROCK, vx * 16, 2 * 16)
-    # Star Coin #1 — on isolated high island
-    a.add_ground(72, GY - 8, 4, 3, tileset=1)
-    a.add_sprite(db.STAR_COIN, 73 * 16, (GY - 9) * 16, spritedata=bytes([0, 0, 0, 0, 0, 0]))
-
-    # Midway flag
-    a.add_ground(104, GY, 10, 5, tileset=1)
-    a.add_sprite(db.MIDWAY_FLAG, 110 * 16, (GY - 1) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-    # ══ SECTION B: Open meteor zone — dense meteor rain + Para-Bob-ombs (X 116–213) ══
-    # Para-Bob-ombs replace Banzai Bills here — they parachute DOWN from above
-    plat_b = [
-        (116,GY,6),(128,GY-4,5),(138,GY,6),(150,GY-5,4),(158,GY,6),
-        (170,GY-4,5),(180,GY,6),(192,GY-5,4),(200,GY,8),
-    ]
-    for px, py, pw in plat_b:
-        a.add_ground(px, py, pw, 5, tileset=1)
-    # Bridge: gap from 207 to 215 was 8 tiles — add stepping stone
-    a.add_ground(209, GY - 2, 5, 5, tileset=1)   # bridge x=209-213, gap to 215 = 2 tiles
-    # Dense meteor rain — this is the signature of 8-3 (more than 8-1!)
-    for vx in [122, 132, 143, 155, 162, 175, 186, 196, 204]:
-        a.add_sprite(db.VOLCANO_ROCK, vx * 16, 2 * 16)
-    # Para-Bob-ombs falling from sky (parachuting bombs — unique sky hazard)
-    for pbx in [120, 135, 148, 165, 178, 193, 202]:
-        a.add_sprite(db.PARA_BOB_OMB, pbx * 16, 3 * 16)
-    # Podoboos + Fire Piranhas in gaps / on tiered platforms (no Bob-ombs — they walk off cliffs)
-    for lbx in [118, 125, 142, 154, 168, 182, 196, 206]:
-        a.add_sprite(db.PODOBOO, lbx * 16, (GY - 3) * 16, spritedata=POD_SD)
-    for fpx in [131, 159, 174, 188]:
-        a.add_sprite(db.FIRE_PIRANHA_PLANT, fpx * 16, (GY - 6) * 16)
-    for fpx2 in [140, 203]:
-        a.add_sprite(db.FIRE_PIRANHA_PLANT, fpx2 * 16, (GY - 5) * 16)
-    for dx in [130, 152, 185]:
-        a.add_sprite(db.DRY_BONES, dx * 16, ey(GY - 4))
-    for ax in [123, 147, 176]:
-        a.add_sprite(db.AMP, ax * 16, (GY - 6) * 16)
-    # Star Coin #2 — under a safe overhang platform
-    a.add_ground(155, GY - 10, 5, 2, tileset=1)
-    a.add_sprite(db.STAR_COIN, 157 * 16, (GY - 11) * 16, spritedata=bytes([0, 0, 0, 0, 1, 0]))
-
-    # ══ SECTION C: Fire Snake gauntlet on narrow ledges (X 215–341) ══
-    plat_c = [
-        (215,GY,9),(229,GY-3,6),(240,GY,8),(254,GY-4,5),(263,GY,9),
-        (276,GY-3,6),(288,GY,8),(302,GY-4,5),(312,GY,10),(328,GY,14),
-    ]
-    for px, py, pw in plat_c:
-        a.add_ground(px, py, pw, 5, tileset=1)
-    for fsx in [220, 226, 235, 248, 258, 267, 280, 295, 305, 315, 330]:
-        a.add_sprite(db.FIRE_SNAKE, fsx * 16, ey(GY))
-    # Sledge Bros replacing Fire Bros on the wider platforms
-    a.add_sprite(db.SLEDGE_BRO, 231 * 16, ey(GY - 3))
-    a.add_sprite(db.SLEDGE_BRO, 265 * 16, ey(GY))
-    a.add_sprite(db.SLEDGE_BRO, 314 * 16, ey(GY))
-    for lbx in [218, 234, 252, 270, 286, 300, 318, 332]:
-        a.add_sprite(db.PODOBOO, lbx * 16, (GY - 3) * 16, spritedata=POD_SD)
-    for dx in [222, 244, 266, 292]:
-        a.add_sprite(db.DRY_BONES, dx * 16, (GY - 1) * 16)
-    a.add_sprite(db.DRY_BONES, 304 * 16, ey(GY - 4))   # on 302,GY-4 platform — not main tier
-    for dx2 in [231, 264, 290]:
-        a.add_sprite(db.DRY_BONES, dx2 * 16, ey(GY - 3))
-    for mx in [241, 268, 318]:
-        a.add_sprite(db.MECHAKOOPA, mx * 16, (GY - 1) * 16)
-    # Continued meteor rain over Section C
-    for vx in [224, 244, 268, 290, 316, 334]:
-        a.add_sprite(db.VOLCANO_ROCK, vx * 16, 2 * 16)
-    # Para-Bob-ombs still falling
-    for pbx in [230, 255, 278, 308]:
-        a.add_sprite(db.PARA_BOB_OMB, pbx * 16, 3 * 16)
-    # Star Coin #3 — threading between Fire Snakes
-    a.add_sprite(db.STAR_COIN, 302 * 16, (GY - 6) * 16, spritedata=bytes([0, 0, 0, 0, 2, 0]))
-
-    # ══ BRIDGE C→D: was a 29-tile gap — now 3 stepping stones (X 342–369) ══
-    a.add_ground(342, GY,     7, 5, tileset=1)   # x=342-348
-    a.add_ground(354, GY - 3, 6, 5, tileset=1)   # x=354-359, gap=5 ✓
-    a.add_ground(363, GY,     6, 5, tileset=1)   # x=363-368, gap=3 ✓, leads to 370
-    # Hazards on bridge stones
-    for fsx in [343, 356, 364]:
-        a.add_sprite(db.FIRE_SNAKE, fsx * 16, ey(GY))
-    for vx in [348, 361]:
-        a.add_sprite(db.VOLCANO_ROCK, vx * 16, 2 * 16)
-
-    # ══ SECTION D: Volcano Finale — King Bill + meteor wall + Sledge Bros (X 370–490) ══
-    plat_d = [
-        (370,GY,7),(382,GY-4,5),(392,GY,7),(404,GY-5,4),(413,GY,8),
-        (426,GY-3,5),(436,GY,7),(448,GY-4,5),(458,GY,9),(472,GY,12),
-    ]
-    for px, py, pw in plat_d:
-        a.add_ground(px, py, pw, 5, tileset=1)
-    # King Bill — screen-filling bullet, signature finale moment
-    a.add_sprite(db.KING_BILL, 490 * 16, (GY - 5) * 16)
-    # Heaviest meteor barrage in the level
-    for vrx in [374, 386, 395, 407, 416, 428, 440, 452, 463, 476]:
-        a.add_sprite(db.VOLCANO_ROCK, vrx * 16, 2 * 16)
-    # Para-Bob-ombs raining down throughout D
-    for pbx in [372, 387, 400, 415, 430, 445, 460, 475]:
-        a.add_sprite(db.PARA_BOB_OMB, pbx * 16, 3 * 16)
-    # Fire Snakes patrolling platforms
-    for fsx in [373, 384, 394, 406, 415, 428, 438, 450, 460, 474]:
-        a.add_sprite(db.FIRE_SNAKE, fsx * 16, ey(GY))
-    # Sledge Bros on wider platforms — ground pounders knock you into the pit
-    for sbx in [384, 415, 440, 460]:
-        a.add_sprite(db.SLEDGE_BRO, sbx * 16, ey(GY - 4))
-    for lbx in [376, 390, 404, 420, 434, 448, 462, 478]:
-        a.add_sprite(db.PODOBOO, lbx * 16, (GY - 3) * 16, spritedata=POD_SD)
-    for dx in [374, 396, 415, 438, 460, 472]:
-        a.add_sprite(db.DRY_BONES, dx * 16, (GY - 1) * 16)
-    for mx in [383, 395, 427, 450, 475]:
-        a.add_sprite(db.MECHAKOOPA, mx * 16, (GY - 1) * 16)
-    for fpx in [388, 418, 446]:
-        a.add_sprite(db.FIRE_PIRANHA_PLANT, fpx * 16, (GY - 5) * 16)
-    # Banzai Bills finally appear HERE at the end (not mid-level like 8-1)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 488 * 16, (GY - 2) * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 488 * 16, (GY - 7) * 16)
-
-    # Goal
-    a.add_ground(492, GY, 20, 5, tileset=1)
-    a.add_sprite(db.GOAL_POLE, 504 * 16, (GY - 1) * 16)
-
-    builder.save('output/ChaosStation/Stage/08-03.arc')
-    print('Created 8-3: Meteor Storm')
-
-
-def create_level_8_4():
-    """8-4: Midnight Trench — finale swim gauntlet (packed, long, high tension).
-
-    Pacing: bait coins → Blooper/urchin choke → Jellybeam storm → Fishbone trench + midway →
-    red-coin panic ring → Porcu/Chomp runway → dry stairs to goal. model_dark for Jellybeams.
-    """
-    from tools.level_builder import LevelBuilder
-    import tools.sprite_db as db
-
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_STANDARD)
-    a.set_tileset(1, db.TILESET_OCEAN)
-    # Use explicit ghost-house backdrop so this reads as a haunted deep-sea trench.
-    a.set_background(db.BG_GHOST_HOUSE,
-                     x_scroll_a=0, y_scroll_a=0, x_scroll_b=0, y_scroll_b=0,
-                     zoom_a=1, zoom_b=1)
-    a.set_time(500)
-
-    GY = 34
-    # Tighter vertical camera + full darkness (required for Jellybeam visuals)
-    a.add_zone(0, 0, 14000, 544, zone_id=0, music=db.MUSIC_UNDERWATER, cam_mode=0,
-               visibility=36, model_dark=12, terrain_dark=12)
-
-    a.add_sprite(db.WATER_FILL, 0, 0, spritedata=b'\x01\x00\x00\x00\x00\x00')
-    a.add_entrance(0, 5 * 16, 22 * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 420 * 16, 24 * 16, etype=db.ENTRANCE_NORMAL)
-
-    TX = 0
-
-    # ══ §1 — False calm (coin trails + density) ══
-    a.add_ground(TX, GY, 110, 6, tileset=1)
-    a.add_ground(TX, 0, 110, 5, tileset=1)
-    for px, py, pw in [(10, GY - 6, 2), (22, GY - 9, 3), (38, GY - 5, 2), (52, GY - 8, 2),
-                       (68, GY - 4, 3), (88, GY - 7, 2), (98, GY - 5, 3)]:
-        a.add_ground(TX + px, py, pw, 5, tileset=1)
-    for cx in [8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 90, 100]:
-        a.add_sprite(db.CHEEP_CHEEP, cx * 16, 28 * 16)
-    a.add_sprite(db.BULBER, 35 * 16, 26 * 16)
-    a.add_sprite(db.BULBER, 72 * 16, 24 * 16)
-    a.add_star_coin(28, GY - 3, coin_num=0)
-    a.add_sprite(db.GLOW_LIGHT, 45 * 16, 20 * 16)
-    a.add_coin_line(12, 26, 10)
-    a.add_coin_line(55, 24, 8)
-    a.add_question_block(62, 22, contents=1)
-    a.add_question_block(18, 20, contents=0)
-
-    # ══ §2 — Blooper choke (low ceiling + urchin gates) ══
-    a.add_ground(TX + 110, GY, 140, 6, tileset=1)
-    a.add_ground(TX + 110, 0, 140, 6, tileset=1)
-    for ox in [118, 132, 146, 160, 174, 188, 202, 216, 230, 240]:
-        a.add_ground(TX + ox, GY - 12, 2, 8, tileset=1)
-        a.add_ground(TX + ox, GY - 3, 2, 3, tileset=1)
-    for bx in [122, 136, 150, 168, 182, 196, 210, 224, 236]:
-        a.add_sprite(db.BLOOPER, bx * 16, 20 * 16)
-    a.add_sprite(db.BLOOPER_NANNY, 154 * 16, 17 * 16)
-    a.add_sprite(db.BLOOPER_NANNY, 214 * 16, 19 * 16)
-    for ux in [120, 140, 158, 178, 200, 220]:
-        a.add_sprite(db.URCHIN, ux * 16, (GY - 8) * 16)
-        a.add_sprite(db.URCHIN, ux * 16, (GY - 4) * 16)
-    a.add_star_coin(188, 12, coin_num=1)
-    a.add_coin_line(125, 22, 6)
-    a.add_coin_line(165, 18, 5)
-    a.add_coin_line(205, 22, 6)
-    a.add_question_block(172, 16, contents=0)
-
-    # ══ §3 — Jellybeam storm ══
-    a.add_ground(TX + 250, GY, 170, 6, tileset=1)
-    a.add_ground(TX + 250, 0, 170, 5, tileset=1)
-    for jx in range(258, 410, 11):
-        a.add_sprite(db.JELLYBEAM, jx * 16, (6 + (jx % 3)) * 16)
-    for jx2 in range(264, 400, 18):
-        a.add_sprite(db.JELLYBEAM, jx2 * 16, 10 * 16)
-    for ax in [270, 300, 330, 360, 390]:
-        a.add_sprite(db.BULBER, ax * 16, 24 * 16)
-    for bx in [262, 285, 312, 338, 368, 398]:
-        a.add_sprite(db.BLOOPER, bx * 16, 22 * 16)
-    a.add_coin_line(280, 20, 8)
-    a.add_coin_line(340, 18, 7)
-    a.add_coin_line(375, 24, 6)
-
-    # ══ §4 — Fishbone trench ══
-    a.add_ground(TX + 420, GY + 2, 140, 5, tileset=1)
-    a.add_ground(TX + 420, 0, 140, 4, tileset=1)
-    for ox in [432, 452, 472, 492, 512, 532, 548]:
-        a.add_ground(TX + ox, GY - 4, 2, 6, tileset=1)
-    for fx in [428, 438, 448, 458, 468, 478, 488, 498, 508, 518, 528, 540]:
-        a.add_sprite(db.FISHBONE, fx * 16, 26 * 16)
-    a.add_sprite(db.SPINY_CHEEP_CHEEP, 460 * 16, 30 * 16)
-    a.add_sprite(db.SPINY_CHEEP_CHEEP, 500 * 16, 29 * 16)
-    a.add_sprite(db.BIG_CHEEP_CHEEP, 520 * 16, 28 * 16)
-    a.add_sprite(db.BLOOPER_NANNY, 485 * 16, 18 * 16)
-    a.add_star_coin(455, 22, coin_num=2)
-    a.add_sprite(db.MIDWAY_FLAG, 480 * 16, (GY + 1) * 16,
-                 spritedata=b'\x00\x00\x00\x01\x00\x00')
-    a.add_coin_line(430, 24, 5)
-    a.add_coin_line(510, 20, 6)
-
-    # ══ §5 — Red-coin panic ring (urchin rim + hunters) ══
-    a.add_ground(TX + 560, GY, 110, 6, tileset=1)
-    a.add_ground(TX + 560, 0, 110, 5, tileset=1)
-    for ox in [575, 595, 620, 645]:
-        a.add_ground(TX + ox, GY - 9, 3, 7, tileset=1)
-    a.add_red_coin_ring(615, 22, pattern='circle')
-    for ux in [580, 600, 630, 650]:
-        a.add_sprite(db.URCHIN, ux * 16, (GY - 6) * 16)
-    for bx in [570, 610, 640]:
-        a.add_sprite(db.BLOOPER, bx * 16, 20 * 16)
-    for fx in [565, 585, 625, 655]:
-        a.add_sprite(db.FISHBONE, fx * 16, 27 * 16)
-    a.add_coin_line(600, 26, 5)
-
-    # ══ §6 — Porcu + Boss Bass runway ══
-    a.add_ground(TX + 670, GY, 120, 6, tileset=1)
-    a.add_ground(TX + 670, 0, 120, 5, tileset=1)
-    for ox in [685, 705, 730, 755]:
-        a.add_ground(TX + ox, GY - 10, 3, 8, tileset=1)
-    a.add_sprite(db.PORCU_PUFFER, 695 * 16, 24 * 16)
-    a.add_sprite(db.PORCU_PUFFER, 740 * 16, 26 * 16)
-    a.add_sprite(db.CHEEP_CHOMP, 715 * 16, 26 * 16)
-    for bx in [680, 700, 720, 750, 770]:
-        a.add_sprite(db.BLOOPER, bx * 16, 18 * 16)
-    for bx2 in [688, 728, 762]:
-        a.add_sprite(db.BIG_CHEEP_CHEEP, bx2 * 16, 30 * 16)
-    a.add_coin_line(710, 22, 6)
-    a.add_question_block(725, 20, contents=1)
-
-    # ══ §7 — Surface breach (dry goal) ══
-    a.add_ground(TX + 790, 20, 60, 3, tileset=1)
-    a.add_ground(TX + 790, 22, 60, 18, tileset=1)
-    a.add_staircase(TX + 808, 19, 7, direction=1, tileset=1)
-    a.add_sprite(db.CHEEP_CHEEP, 798 * 16, 18 * 16)
-    a.add_sprite(db.BLOOPER, 792 * 16, 16 * 16)
-    a.add_sprite(db.GOAL_POLE, 825 * 16, 8 * 16)
-
-    builder.save('output/ChaosStation/Stage/08-04.arc')
-    print('Created 8-4: Midnight Trench (underwater)')
-
-
-def create_level_8_5():
-    """8-5: Magma Rise — THE signature level. Climb above rising lava.
-    Ascending terrain over lava sea; the ground rises in stairstep formation
-    forcing ever-higher platforming while Poseboos and Crowbers attack.
-    Three risky side-pocket Star Coins that cost precious climbing time.
-    """
-    from tools.level_builder import LevelBuilder
-    import tools.sprite_db as db
-
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_LAVA)
-    a.set_tileset(1, db.TILESET_KOOPA_OUT)
-    a.set_background(db.BG_LAVA)
-    a.set_time(400)
-    a.add_zone(0, 0, 9280, 640, zone_id=0, music=db.MUSIC_LAVA, cam_mode=0, visibility=16)
-    # Cloud Area (sprite 234): type=5 drifting death clouds, location in low nybble.
-    DEATH_CLOUD_DRIFT_1 = b'\x00\x00\x00\x00\x00\x51'
-    DEATH_CLOUD_DRIFT_2 = b'\x00\x00\x00\x00\x00\x52'
-    DEATH_CLOUD_DRIFT_3 = b'\x00\x00\x00\x00\x00\x53'
-    DEATH_CLOUD_DRIFT_4 = b'\x00\x00\x00\x00\x00\x54'
-    DEATH_CLOUD_DRIFT_5 = b'\x00\x00\x00\x00\x00\x55'
-    DEATH_CLOUD_DRIFT_6 = b'\x00\x00\x00\x00\x00\x56'
-    DEATH_CLOUD_DRIFT_7 = b'\x00\x00\x00\x00\x00\x57'
-    DEATH_CLOUD_DRIFT_8 = b'\x00\x00\x00\x00\x00\x58'
-    DEATH_CLOUD_DRIFT_9 = b'\x00\x00\x00\x00\x00\x59'
-
-    # The ground RISES: each chunk is higher than the last, over a lava sea
-    # GY values: start at 28, end at 6 — the player climbs 22 tiles upward
-    a.add_entrance(0, 3 * 16, 27 * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 118 * 16, 17 * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-    # Lava sea below (fills from y=30 down)
-    a.add_sprite(db.LAVA_FILL, 0, 30 * 16, spritedata=b'\x00\x00\x00\x00\x01\x00')
-    # Rising lava particle effect
-    a.add_sprite(db.RISING_LAVA_FX, 0, 0)
-    # Faster, compact chase wall: many tight strips with short spacing.
-    # Start slightly LEFT of spawn so pressure begins immediately.
-    a.add_location(1,    0 * 16, 0, 8 * 16, 27 * 16)
-    a.add_location(2,   70 * 16, 0, 8 * 16, 27 * 16)
-    a.add_location(3,  160 * 16, 0, 8 * 16, 27 * 16)
-    a.add_location(4,  250 * 16, 0, 8 * 16, 27 * 16)
-    a.add_location(5,  340 * 16, 0, 8 * 16, 27 * 16)
-    a.add_location(6,  430 * 16, 0, 8 * 16, 27 * 16)
-    a.add_location(7,  520 * 16, 0, 8 * 16, 27 * 16)
-    a.add_location(8,  610 * 16, 0, 8 * 16, 27 * 16)
-    a.add_location(9,  700 * 16, 0, 8 * 16, 27 * 16)
-    a.add_sprite(db.CLOUD_AREA,   2 * 16, 8 * 16, spritedata=DEATH_CLOUD_DRIFT_1)
-    a.add_sprite(db.CLOUD_AREA,  72 * 16, 8 * 16, spritedata=DEATH_CLOUD_DRIFT_2)
-    a.add_sprite(db.CLOUD_AREA, 162 * 16, 8 * 16, spritedata=DEATH_CLOUD_DRIFT_3)
-    a.add_sprite(db.CLOUD_AREA, 252 * 16, 8 * 16, spritedata=DEATH_CLOUD_DRIFT_4)
-    a.add_sprite(db.CLOUD_AREA, 342 * 16, 8 * 16, spritedata=DEATH_CLOUD_DRIFT_5)
-    a.add_sprite(db.CLOUD_AREA, 432 * 16, 8 * 16, spritedata=DEATH_CLOUD_DRIFT_6)
-    a.add_sprite(db.CLOUD_AREA, 522 * 16, 8 * 16, spritedata=DEATH_CLOUD_DRIFT_7)
-    a.add_sprite(db.CLOUD_AREA, 612 * 16, 8 * 16, spritedata=DEATH_CLOUD_DRIFT_8)
-    a.add_sprite(db.CLOUD_AREA, 702 * 16, 8 * 16, spritedata=DEATH_CLOUD_DRIFT_9)
-
-    # ══ PHASE 1: Slow ascent (X 0–120) — learn the pace, low platforms ══
-    phase1 = [
-        (0,  28, 12), (14, 27, 8),  (26, 26, 7),  (37, 25, 8),
-        (49, 24, 7),  (60, 23, 8),  (72, 22, 7),  (84, 21, 8),
-        (96, 20, 7),  (107,19, 8),  (118,18, 7),
-    ]
-    for px, py, pw in phase1:
-        a.add_ground(px, py, pw, 5, tileset=1)
-    # Podoboos bouncing from lava below
-    for lbx in [15, 28, 50, 73, 97]:
-        a.add_sprite(db.PODOBOO, lbx * 16, 24 * 16, spritedata=b'\x00\x00\x00\x00\x00\x02')
-    for cx in [20, 42, 64, 88, 112, 35, 55, 82]:
-        a.add_sprite(db.CROWBER, cx * 16, 10 * 16)
-    # Star Coin #1 — left alcove detour, costs time
-    a.add_ground(40, 18, 5, 3, tileset=1)
-    a.add_sprite(db.STAR_COIN, 42 * 16, 17 * 16, spritedata=bytes([0,0,0,0,0,0]))
-    a.add_sprite(db.MIDWAY_FLAG, 118 * 16, 17 * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-    # ══ PHASE 2: Acceleration zone (X 124–250) — speed up, Amps on platforms ══
-    phase2 = [
-        (126,17, 7),(137,15, 6),(147,14, 7),(158,13, 6),(168,12, 7),
-        (180,11, 6),(190,10, 7),(202, 9, 6),(213, 8, 7),(225, 7, 6),
-        (236, 6, 7),(248, 5, 8),
-    ]
-    for px, py, pw in phase2:
-        a.add_ground(px, py, pw, 5, tileset=1)
-    for lbx in [130, 150, 170, 193, 215, 238]:
-        a.add_sprite(db.PODOBOO, lbx * 16, 24 * 16, spritedata=b'\x00\x00\x00\x00\x00\x02')
-    # Amps on platforms (can't stomp them — must dodge)
-    for ax, ay in [(142, 14), (160, 12), (182, 10), (205, 8), (226, 7)]:
-        a.add_sprite(db.AMP, ax * 16, ay * 16)
-    # Fire Bros on platforms
-    for fbx in [145, 195]:
-        a.add_sprite(db.FIRE_BRO, fbx * 16, 12 * 16)
-    for cx in [133, 155, 178, 200, 224, 247]:
-        a.add_sprite(db.CROWBER, cx * 16, 3 * 16)
-    for vrx in [146, 176, 206, 236]:
-        a.add_sprite(db.VOLCANO_ROCK, vrx * 16, 1 * 16)
-    # Star Coin #2 — right shelf detour off the main climb path
-    a.add_ground(192, 4, 5, 3, tileset=1)
-    a.add_sprite(db.STAR_COIN, 194 * 16, 3 * 16, spritedata=bytes([0,0,0,0,1,0]))
-
-    # ══ PHASE 3: Sprint finale (X 254–400) — fastest, springboards, Fire Snake at top ══
-    phase3 = [
-        (256, 4, 6),(264, 3, 6),(273, 4, 5),(281, 3, 5),(290, 4, 5),
-        (298, 3, 5),(307, 4, 5),(315, 3, 5),(324, 4, 6),(333, 3, 5),
-        (342, 4, 5),(351, 3, 5),(362, 4, 6),(375, 3, 8),(387, 4, 16),
-    ]
-    for px, py, pw in phase3:
-        a.add_ground(px, py, pw, 5, tileset=1)
-    for lbx in [258, 275, 292, 310, 328, 345, 365]:
-        a.add_sprite(db.PODOBOO, lbx * 16, 24 * 16, spritedata=b'\x00\x00\x00\x00\x00\x02')
-    # Fire Snake guards the summit
-    a.add_sprite(db.FIRE_SNAKE, 370 * 16, 2 * 16)
-    a.add_sprite(db.FIRE_SNAKE, 385 * 16, 2 * 16)
-    a.add_sprite(db.FIRE_SNAKE, 288 * 16, 2 * 16)
-    a.add_sprite(db.FIRE_SNAKE, 335 * 16, 2 * 16)
-    for ax, ay in [(266, 3), (286, 2), (306, 3), (326, 2), (346, 3)]:
-        a.add_sprite(db.AMP, ax * 16, ay * 16)
-    for cx in [260, 280, 300, 320, 340, 360]:
-        a.add_sprite(db.CROWBER, cx * 16, 1 * 16)
-    for vrx in [270, 298, 326, 354, 382]:
-        a.add_sprite(db.VOLCANO_ROCK, vrx * 16, 0 * 16)
-    # Star Coin #3 — left nook just before summit
-    a.add_ground(351, 0, 4, 2, tileset=1)
-    a.add_sprite(db.STAR_COIN, 352 * 16, 0 * 16, spritedata=bytes([0,0,0,0,2,0]))
-
-    # ══ PHASE 4: Summit Sprint (X 406–580) — horizontal gauntlet at peak height ══
-    # The climb is over — now sprint right at the summit dodging everything
-    phase4 = [
-        (406, 3, 7),(417, 4, 6),(426, 3, 7),(437, 4, 6),(446, 3, 7),
-        (458, 4, 6),(467, 3, 7),(479, 4, 6),(489, 3, 7),(501, 4, 6),
-        (511, 3, 7),(523, 4, 6),(533, 3, 8),(545, 4, 16),
-    ]
-    for px, py, pw in phase4:
-        a.add_ground(px, py, pw, 5, tileset=1)
-    # Podoboos still jumping from below
-    for lbx in [409, 420, 430, 440, 453, 462, 473, 483, 494, 505, 515, 526]:
-        a.add_sprite(db.PODOBOO, lbx * 16, 24 * 16, spritedata=b'\x00\x00\x00\x00\x00\x02')
-    # Fire Snakes everywhere at the summit
-    for fsx in [410, 421, 432, 443, 455, 466, 477, 492, 506, 518, 532]:
-        a.add_sprite(db.FIRE_SNAKE, fsx * 16, 2 * 16)
-    # Amps in tight columns
-    for ax, ay in [(418, 2), (442, 3), (466, 2), (492, 3), (518, 2)]:
-        a.add_sprite(db.AMP, ax * 16, ay * 16)
-    # Crowbers diving from above
-    for cx in [412, 425, 440, 460, 475, 495, 515, 535]:
-        a.add_sprite(db.CROWBER, cx * 16, 0 * 16)
-    # Fire Bros on elevated rocks
-    for fbx in [418, 448, 472, 500, 525]:
-        a.add_sprite(db.FIRE_BRO, fbx * 16, 2 * 16)
-    # Volcano rocks raining down at the summit
-    for vrx in [420, 450, 480, 510, 540]:
-        a.add_sprite(db.VOLCANO_ROCK, vrx * 16, 0 * 16)
-    # End-pressure artillery so the summit no longer feels free
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 548 * 16, 3 * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 548 * 16, 8 * 16)
-
-    # Goal at the summit
-    a.add_sprite(db.GOAL_POLE, 553 * 16, 2 * 16)
-
-    builder.save('output/ChaosStation/Stage/08-05.arc')
-    print('Created 8-5: Magma Rise')
-
-
-def create_level_8_6():
-    """8-6: Bowser's Vanguard — elite enemy pure gauntlet.
-    Four brutal sections: Sledge Bros + Chain Chomps → Giant Spiked Balls
-    → Amp column maze → Final Elite Wave (all Bros simultaneously).
-    No lava floor — the challenge is entirely enemy-based.
-    """
-    from tools.level_builder import LevelBuilder
-    import tools.sprite_db as db
-
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_LAVA)
-    a.set_tileset(1, db.TILESET_LAVA_CLIFF)
-    a.set_background(db.BG_CASTLE)
-    a.set_time(400)
-    GY = 26
-    # 8-6 reaches tile ~554 at the end; keep camera margin past the goal zone.
-    a.add_zone(0, 0, 9600, 640, zone_id=0, music=db.MUSIC_CASTLE, cam_mode=0, visibility=16)
-
-    # Spawn
-    a.add_ground(0, GY, 540, 5, tileset=1)  # solid floor for the entire gauntlet
-    a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 104 * 16, (GY - 1) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-
-    # ══ SECTION A: Sledge Bro + Chain Chomp double-gauntlet (X 0–100) ══
-    for sbx in [18, 40, 62, 84, 30, 75]:
-        a.add_sprite(db.SLEDGE_BRO, sbx * 16, (GY - 1) * 16)
-    for ccx in [28, 52, 74, 96, 42, 86]:
-        a.add_sprite(db.CHAIN_CHOMP, ccx * 16, (GY - 1) * 16)
-    # Raised platforms above the fray
-    for rpx in [20, 44, 68, 92]:
-        a.add_ground(rpx, GY - 6, 5, 3, tileset=1)
-        a.add_sprite(db.FIRE_BRO, (rpx + 2) * 16, (GY - 7) * 16)
-    # Star Coin #1 — in the Chain Chomp zone alcove
-    a.add_ground(55, GY - 9, 5, 3, tileset=1)
-    a.add_sprite(db.STAR_COIN, 57 * 16, (GY - 10) * 16, spritedata=bytes([0,0,0,0,0,0]))
-
-    # Midway flag
-    a.add_sprite(db.MIDWAY_FLAG, 104 * 16, (GY - 1) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-    # ══ SECTION B: Giant Spiked Balls (X 108–190) ══
-    # Narrow dodge alcoves; Spiked Balls roll through the main path
-    for gsb_x in [120, 145, 165, 185, 135, 175]:
-        a.add_sprite(db.GIANT_SPIKED_BALL, gsb_x * 16, (GY - 3) * 16)
-    # Alcoves to dodge into (small platform pockets)
-    for alc_x in [113, 132, 155, 175]:
-        a.add_ground(alc_x, GY - 6, 4, 5, tileset=1)
-        a.add_sprite(db.MECHAKOOPA, (alc_x + 1) * 16, (GY - 7) * 16)
-    # Bob-omb Cannons firing Para-Bob-ombs from wall alcoves
-    for can_x in [118, 143, 163]:
-        a.add_sprite(db.BOB_OMB_CANNON, can_x * 16, (GY - 3) * 16)
-    # Star Coin #2 — inside a Spiked Ball corridor (timed grab)
-    a.add_sprite(db.STAR_COIN, 154 * 16, (GY - 8) * 16, spritedata=bytes([0,0,0,0,1,0]))
-
-    # ══ SECTION C: Amp column maze (X 194–270) ══
-    # Amps at multiple heights creating vertical columns; narrow gaps to thread
-    for acol_x in range(200, 270, 10):
-        # Three Amps per column at different heights
-        a.add_sprite(db.AMP, acol_x * 16, (GY - 2) * 16)
-        a.add_sprite(db.AMP, acol_x * 16, (GY - 6) * 16)
-        a.add_sprite(db.AMP, acol_x * 16, (GY - 10) * 16)
-    # Some columns are staggered so there's always a gap to pass through
-    for acol_x in range(204, 268, 10):
-        a.add_sprite(db.AMP, acol_x * 16, (GY - 4) * 16)
-        a.add_sprite(db.AMP, acol_x * 16, (GY - 8) * 16)
-    # Mecha-Koopas patrolling the floor
-    for mx in [196, 212, 228, 244, 260]:
-        a.add_sprite(db.MECHAKOOPA, mx * 16, (GY - 1) * 16)
-
-    # ══ SECTION D: Final Elite Wave (X 275–380) ══
-    # All Bro types + Thwomps + Giant Spiked Ball simultaneously
-    elite = [
-        # x,    stype
-        (280,   db.SLEDGE_BRO),
-        (295,   db.HAMMER_BRO),
-        (310,   db.FIRE_BRO),
-        (325,   db.SLEDGE_BRO),
-        (340,   db.HAMMER_BRO),
-        (355,   db.FIRE_BRO),
-        (370,   db.SLEDGE_BRO),
-    ]
-    for ex, estype in elite:
-        a.add_sprite(estype, ex * 16, (GY - 1) * 16)
-    # Extra Sledge Bros in the elite wave
-    for sbx in [300, 360]:
-        a.add_sprite(db.SLEDGE_BRO, sbx * 16, (GY - 1) * 16)
-    for tx in [288, 318, 348]:
-        a.add_sprite(db.BIG_THWOMP, tx * 16, (GY - 10) * 16)
-    # Two Giant Spiked Balls rolling through
-    a.add_sprite(db.GIANT_SPIKED_BALL, 295 * 16, (GY - 3) * 16)
-    a.add_sprite(db.GIANT_SPIKED_BALL, 340 * 16, (GY - 3) * 16)
-    # Star Coin #3 — behind the Elite Wave, elevated platform
-    a.add_ground(360, GY - 8, 5, 3, tileset=1)
-    a.add_sprite(db.STAR_COIN, 362 * 16, (GY - 9) * 16, spritedata=bytes([0,0,0,0,2,0]))
-
-    # ══ SECTION E: Final Hellwave — every enemy type at once (X 415–530) ══
-    # King Bill passes through; all Bros + Chain Chomps + Thwomps + Amps
-    a.add_sprite(db.KING_BILL, 530 * 16, (GY - 5) * 16)
-    # All Bro types in alternating pairs
-    for ex, estype in [
-        (420, db.SLEDGE_BRO), (432, db.HAMMER_BRO), (444, db.FIRE_BRO),
-        (456, db.SLEDGE_BRO), (468, db.HAMMER_BRO), (480, db.FIRE_BRO),
-        (492, db.SLEDGE_BRO), (504, db.HAMMER_BRO), (516, db.FIRE_BRO),
-    ]:
-        a.add_sprite(estype, ex * 16, (GY - 1) * 16)
-    # Big Thwomps crashing down
-    for tx in [426, 452, 476, 500, 520]:
-        a.add_sprite(db.BIG_THWOMP, tx * 16, (GY - 12) * 16)
-    # Chain Chomps blocking the path
-    for ccx in [436, 462, 488, 512]:
-        a.add_sprite(db.CHAIN_CHOMP, ccx * 16, (GY - 1) * 16)
-    # Giant Spiked Balls rolling through
-    for gsbx in [430, 460, 490]:
-        a.add_sprite(db.GIANT_SPIKED_BALL, gsbx * 16, (GY - 3) * 16)
-    # Amps at multiple heights
-    for ax in [440, 465, 490, 515]:
-        a.add_sprite(db.AMP, ax * 16, (GY - 4) * 16)
-        a.add_sprite(db.AMP, ax * 16, (GY - 8) * 16)
-    # Bob-omb Cannons firing from walls
-    a.add_sprite(db.BOB_OMB_CANNON, 528 * 16, (GY - 3) * 16)
-    a.add_sprite(db.BOB_OMB_CANNON, 528 * 16, (GY - 7) * 16)
-    # Raised platforms with Fire Bros
-    for rpx in [422, 458, 494]:
-        a.add_ground(rpx, GY - 8, 5, 3, tileset=1)
-        a.add_sprite(db.FIRE_BRO, (rpx + 2) * 16, (GY - 9) * 16)
-
-    # Goal
-    a.add_ground(535, GY, 20, 5, tileset=1)
-    a.add_sprite(db.GOAL_POLE, 547 * 16, (GY - 1) * 16)
-
-    builder.save('output/ChaosStation/Stage/08-06.arc')
-    print('Created 8-6: Bowser\'s Vanguard')
-
-
-def create_level_8_7():
-    """8-7: Inferno Shaft — climb through rising lava on isolated platforms.
-    NO continuous floor — only isolated platforms scattered at rows 6-30.
-    Lava rises from below, flooding low platforms first and chasing the player
-    upward. Three areas via pipes with escalating lava speed.
-    Spritedata: mode=n4 (byte2 hi), dist=n7*16+n8 (byte3 lo + byte4 hi),
-                waves=n9=1 (byte4 lo). e.g. mode=5,dist=24: b'\\x00\\x00\\x50\\x01\\x81\\x00'
-    """
-    from tools.level_builder import LevelBuilder
-    import tools.sprite_db as db
-
-    builder = LevelBuilder()
-
-    CY = 2    # ceiling row (h=3 → rows 2-4)
-
-    # Rising lava spritedata (mode, dist=24 blocks unless noted)
-    # dist=24: n7=1,n8=8 → byte3=0x01, byte4=0x81 (n8=8,n9=1 waves)
-    # dist=20: n7=1,n8=4 → byte3=0x01, byte4=0x41
-    LAVA_SLOW = b'\x00\x00\x60\x01\x81\x00'  # mode=6 slow-normal, dist=24
-    LAVA_MED  = b'\x00\x00\x60\x01\x81\x00'  # mode=6 slow-normal, dist=24
-    LAVA_FAST = b'\x00\x00\x50\x01\x81\x00'  # mode=5 very slow (same as area 1 — plenty of time)
-
-    # ════════════════════════════════════════════════════════════════
-    # AREA 1 — The Climb Begins (slow lava, gentle ascending gaps)
-    # ════════════════════════════════════════════════════════════════
-    a1 = builder.add_area(1)
-    a1.set_tileset(0, db.TILESET_LAVA)
-    a1.set_tileset(1, db.TILESET_KOOPA_OUT)
-    a1.set_background(db.BG_LAVA)
-    a1.set_time(400)
-    a1.add_zone(0, 0, 2400, 640, zone_id=0, music=db.MUSIC_LAVA, cam_mode=0, visibility=16)
-
-    # Ceiling (blocks escaping upward)
-    a1.add_ground(0, CY, 150, 3, tileset=1)
-
-    # Lava rises from just below lowest platform — NO solid floor
-    # Lowest platform is row 30; lava starts at row 34, rises 24 blocks (to row 10)
-    a1.add_sprite(db.LAVA_FILL, 0, 34 * 16, spritedata=LAVA_SLOW)
-
-    # Spawn ledge (rows 30-33, x=0-7)
-    a1.add_entrance(0, 4 * 16, 29 * 16, etype=db.ENTRANCE_NORMAL)
-    a1.add_ground(0, 30, 8, 4, tileset=1)
-
-    # Isolated platforms climbing from row 30 to row 6
-    # Each platform: (x, top_row, width) — 4 tiles thick
-    # Horizontal gap ~4 tiles, vertical jump ~4 rows (comfortable)
-    plats_a1 = [
-        (11, 28, 7),   # step up 2
-        (22, 24, 7),   # +4
-        (33, 20, 7),   # +4
-        (44, 16, 7),   # +4
-        (55, 12, 7),   # +4
-        (66, 16, 7),   # -4 (variation — must NOT fall into lava)
-        (77, 12, 7),   # +4 back up
-        (88,  8, 7),   # +4
-        (99,  6, 7),   # +2
-        (110, 6, 24),  # wide exit platform
-    ]
-    for px, py, pw in plats_a1:
-        a1.add_ground(px, py, pw, 4, tileset=1)
-
-    # Exit pipe to Area 2
-    a1.add_pipe(129, 6, height=4, tileset=0)
-    a1.add_entrance(1, 130 * 16, 6 * 16,
-                    etype=db.ENTRANCE_PIPE_DOWN, zone_id=0,
-                    dest_area=2, dest_entrance=2)
-
-    # Enemies
-    for x in [14, 26, 37, 48, 59]:
-        a1.add_sprite(db.DRY_BONES, x * 16, 24 * 16)
-    for x in [40, 62, 82, 105]:
-        a1.add_sprite(db.CROWBER, x * 16, 4 * 16)
-    a1.add_sprite(db.FIRE_BRO, 70 * 16, 11 * 16)
-    for x in [18, 50, 80]:
-        a1.add_sprite(db.PODOBOO, x * 16, 34 * 16,
-                      spritedata=b'\x00\x00\x00\x00\x00\x02')
-    a1.add_sprite(db.STAR_COIN, 92 * 16, 7 * 16, spritedata=bytes([0,0,0,0,0,0]))
-
-    # ════════════════════════════════════════════════════════════════
-    # AREA 2 — Rising Heat (medium lava, tighter gaps + more enemies)
-    # ════════════════════════════════════════════════════════════════
-    a2 = builder.add_area(2)
-    a2.set_tileset(0, db.TILESET_LAVA)
-    a2.set_tileset(1, db.TILESET_KOOPA_OUT)
-    a2.set_background(db.BG_LAVA)
-    a2.set_time(400)
-    a2.add_zone(0, 0, 2400, 640, zone_id=0, music=db.MUSIC_LAVA, cam_mode=0, visibility=16)
-
-    a2.add_ground(0, CY, 150, 3, tileset=1)
-    a2.add_sprite(db.LAVA_FILL, 0, 34 * 16, spritedata=LAVA_MED)
-
-    # Spawn pipe + small ledge at bottom-left
-    a2.add_pipe(2, 29, height=4, tileset=0)
-    a2.add_entrance(2, 3 * 16, 29 * 16, etype=db.ENTRANCE_PIPE_UP, zone_id=0)
-    a2.add_entrance(1, 55 * 16, 13 * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-    a2.add_ground(0, 30, 5, 4, tileset=1)
-
-    plats_a2 = [
-        (8,  28, 6),
-        (18, 24, 6),
-        (28, 20, 6),
-        (38, 16, 6),
-        (48, 20, 6),   # dip — forces quick up-down-up decision
-        (58, 14, 6),
-        (68, 10, 6),
-        (78, 14, 6),   # dip
-        (88,  8, 6),
-        (98,  6, 6),
-        (108, 6, 24),  # exit platform
-    ]
-    for px, py, pw in plats_a2:
-        a2.add_ground(px, py, pw, 4, tileset=1)
-
-    a2.add_pipe(127, 6, height=4, tileset=0)
-    a2.add_entrance(3, 128 * 16, 6 * 16,
-                    etype=db.ENTRANCE_PIPE_DOWN, zone_id=0,
-                    dest_area=3, dest_entrance=3)
-
-    # Midway + enemies
-    a2.add_sprite(db.MIDWAY_FLAG, 55 * 16, 13 * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-    for x in [12, 32, 55, 78, 100]:
-        a2.add_sprite(db.CROWBER, x * 16, 4 * 16)
-    a2.add_sprite(db.HAMMER_BRO, 42 * 16, 15 * 16)
-    a2.add_sprite(db.SLEDGE_BRO, 72 * 16, 9 * 16)
-    for x in [20, 50, 80, 105]:
-        a2.add_sprite(db.PODOBOO, x * 16, 34 * 16,
-                      spritedata=b'\x00\x00\x00\x00\x00\x02')
-    a2.add_sprite(db.THWOMP, 62 * 16, (CY + 3) * 16)
-    a2.add_sprite(db.STAR_COIN, 90 * 16, 7 * 16, spritedata=bytes([0,0,0,0,1,0]))
-
-    # ════════════════════════════════════════════════════════════════
-    # AREA 3 — Inferno Summit (fast lava, sprint to goal)
-    # ════════════════════════════════════════════════════════════════
-    a3 = builder.add_area(3)
-    a3.set_tileset(0, db.TILESET_LAVA)
-    a3.set_tileset(1, db.TILESET_KOOPA_OUT)
-    a3.set_background(db.BG_LAVA)
-    a3.set_time(250)
-    a3.add_zone(0, 0, 2400, 640, zone_id=0, music=db.MUSIC_LAVA, cam_mode=0, visibility=16)
-
-    a3.add_ground(0, CY, 150, 3, tileset=1)
-    a3.add_sprite(db.LAVA_FILL, 0, 34 * 16, spritedata=LAVA_FAST)
-
-    # ── Wall-jump shaft ──────────────────────────────────────────────
-    # Left wall x=5-7, right wall x=12-14, inner gap x=8-11 (4 tiles)
-    # Shaft spans rows 8-30 (22 rows) — player bounces up while lava rises
-    a3.add_ground( 5, 8, 3, 23, tileset=1)   # left wall
-    a3.add_ground(12, 8, 3, 23, tileset=1)   # right wall
-
-    # Spawn pipe inside shaft, player emerges facing the walls
-    a3.add_pipe(8, 29, height=3, tileset=0)
-    a3.add_entrance(3, 9 * 16, 29 * 16, etype=db.ENTRANCE_PIPE_UP, zone_id=0)
-
-    # Exit ledge starts at right wall (x=12) — gap x=8-11 stays OPEN so player
-    # can wall-jump up through it and land on the ledge to the right
-    a3.add_ground(12, 7, 28, 3, tileset=1)   # rows 7-9, x=12-39
-
-    # ── Regular section after shaft (small gaps, easy jumps) ─────────
-    # All near row 7-10 so lava (max rise to row 14) never threatens here
-    plats_exit = [
-        (43, 8, 8), (55, 7, 8), (67, 8, 8),
-        (79, 7, 8), (91, 8, 8), (103, 7, 24),
-    ]
-    for px, py, pw in plats_exit:
-        a3.add_ground(px, py, pw, 4, tileset=1)
-
-    # Enemies — wall-jump shaft has Crowbers diving down; exit section has Fire Bros
-    for x in [9, 11, 9, 11]:   # alternate sides inside shaft
-        a3.add_sprite(db.CROWBER, x * 16, 10 * 16)
-    for x in [48, 62, 76, 92]:
-        a3.add_sprite(db.CROWBER, x * 16, 4 * 16)
-    a3.add_sprite(db.CROWBER, 58 * 16, 4 * 16)
-    a3.add_sprite(db.CROWBER, 82 * 16, 4 * 16)
-    a3.add_sprite(db.SLEDGE_BRO, 95 * 16, 6 * 16)
-    for x in [25, 50, 75]:
-        a3.add_sprite(db.PODOBOO, x * 16, 34 * 16,
-                      spritedata=b'\x00\x00\x00\x00\x00\x02')
-    a3.add_sprite(db.STAR_COIN, 107 * 16, 6 * 16, spritedata=bytes([0,0,0,0,2,0]))
-
-    # Goal
-    a3.add_sprite(db.GOAL_POLE, 120 * 16, 6 * 16)
-
-    builder.save('output/ChaosStation/Stage/08-07.arc')
-    print('Created 8-7: Inferno Shaft (3-area rising lava platform climb)')
-
-
-def create_level_8_tower():
-    """8-Tower (08-22): Kamek's Spire — vertical climb + Magikoopa boss.
-    Modifies vanilla 08-22.arc:
-    Area 1: Fire Bars + Thwomps + Hammer Bros added throughout the climb.
-    Area 2: Boss room gets flanking Fire Bars and Amps along the floor.
-    """
-    import copy, os
-    from tools.u8archive import U8Archive
-    from tools.course_parser import parse_course_bin, serialize_course_bin, Sprite
-    import tools.sprite_db as db
-
-    src = 'extracted files/Stage/08-22.arc'
-    dst = 'output/ChaosStation/Stage/08-22.arc'
-    try:
-        with open(src, 'rb') as f:
-            arc = U8Archive.load(f.read())
-    except Exception as e:
-        print(f"[W8] Skipping 8-Tower: couldn't open {src} — {e}")
-        return
-
-    SD = b'\x00\x00\x00\x00\x00\x00'
-    FB_CW  = b'\x00\x00\x00\x00\x10\x06'
-    FB_CCW = b'\x00\x00\x00\x00\x00\x06'
-
-    def spr(stype, x, y, sd=SD):
-        return Sprite(stype=stype, x=x, y=y, spritedata=sd, zone_id=0, extra_byte=0)
-
-    # ── Area 1: Tower Climb ──────────────────────────────────────────────────
-    area1 = parse_course_bin(arc.get_file('course/course1.bin'))
-    sprites1 = list(area1.sprites)
-
-    # Upgrade existing Dry Bones → rotating Bros (Hammer / Fire / Sledge)
-    upgraded = []
-    db_count = 0
-    for s in sprites1:
-        if s.stype == db.DRY_BONES:
-            ns = copy.deepcopy(s)
-            ns.stype = [db.HAMMER_BRO, db.FIRE_BRO, db.SLEDGE_BRO][db_count % 3]
-            upgraded.append(ns)
-            db_count += 1
-        else:
-            upgraded.append(s)
-
-    # Fire Bars at intervals up the climb shaft (approximate pixel coords from vanilla)
-    for y, x_cw, x_ccw in [
-        (3600, 500, 700), (3200, 530, 730), (2800, 500, 700),
-        (2400, 530, 700), (2000, 500, 730), (1600, 530, 700),
-        (1200, 500, 700), (800,  530, 730),
-    ]:
-        upgraded.append(spr(db.FIRE_BAR, x_cw,  y, FB_CW))
-        upgraded.append(spr(db.FIRE_BAR, x_ccw, y + 128, FB_CCW))
-
-    # Thwomps flanking narrow passages
-    for y in [3400, 2600, 1800, 1000]:
-        upgraded.append(spr(db.THWOMP, 608, y))
-
-    # Chain Chomps lower portion
-    for x, y in [(496, 3700), (736, 3500), (512, 3100)]:
-        upgraded.append(spr(db.CHAIN_CHOMP, x, y))
-
-    area1.sprites = upgraded
-    area1.loaded_sprites = sorted(set(s.stype for s in upgraded))
-    arc.set_file('course/course1.bin', serialize_course_bin(area1))
-
-    # ── Area 2: Boss Room ────────────────────────────────────────────────────
-    try:
-        area2 = parse_course_bin(arc.get_file('course/course2.bin'))
-        boss_sprites = list(area2.sprites)
-        # Flank the Magikoopa arena with rotating Fire Bars
-        boss_sprites.append(spr(db.FIRE_BAR, 320, 560, FB_CW))
-        boss_sprites.append(spr(db.FIRE_BAR, 672, 560, FB_CCW))
-        # Amps along the floor edges
-        for ax in [288, 336, 656, 704]:
-            boss_sprites.append(spr(db.AMP, ax, 592))
-        area2.sprites = boss_sprites
-        area2.loaded_sprites = sorted(set(s.stype for s in boss_sprites))
-        arc.set_file('course/course2.bin', serialize_course_bin(area2))
-    except (KeyError, Exception):
-        pass  # Boss area may not exist in vanilla, skip gracefully
-
-    data = arc.pack()
-    os.makedirs('output/ChaosStation/Stage', exist_ok=True)
-    with open(dst, 'wb') as f:
-        f.write(data)
-    print(f'Modified 8-Tower: Kamek\'s Spire ({len(data)} bytes)')
-
-
-def create_level_8_airship():
-    """8-Airship (08-38): The Doomship — final fortress before Bowser.
-    Modifies vanilla 08-38.arc:
-    Hull: adds Bob-omb Cannons, Chain Chomps, extra Hammer Bros.
-    Boss: keeps Bowser Jr, flanks with Fire Bars.
-    """
-    import copy, os
-    from tools.u8archive import U8Archive
-    from tools.course_parser import parse_course_bin, serialize_course_bin, Sprite
-    import tools.sprite_db as db
-
-    src = 'extracted files/Stage/08-38.arc'
-    dst = 'output/ChaosStation/Stage/08-38.arc'
-    try:
-        with open(src, 'rb') as f:
-            arc = U8Archive.load(f.read())
-    except Exception as e:
-        print(f"[W8] Skipping 8-Airship: couldn't open {src} — {e}")
-        return
-
-    SD = b'\x00\x00\x00\x00\x00\x00'
-    FB_CW  = b'\x00\x00\x00\x00\x10\x05'
-    FB_CCW = b'\x00\x00\x00\x00\x00\x05'
-
-    def spr(stype, x, y, sd=SD):
-        return Sprite(stype=stype, x=x, y=y, spritedata=sd, zone_id=0, extra_byte=0)
-
-    # ── Area 1: Airship Hull ─────────────────────────────────────────────────
-    area1 = parse_course_bin(arc.get_file('course/course1.bin'))
-    sprites1 = list(area1.sprites)
-
-    # Upgrade Koopa Troopas → Hammer Bros throughout the hull
-    upgraded = []
-    koopa_count = 0
-    for s in sprites1:
-        if s.stype in (db.KOOPA, db.KOOPA_PARATROOPA):
-            ns = copy.deepcopy(s)
-            ns.stype = [db.HAMMER_BRO, db.FIRE_BRO][koopa_count % 2]
-            upgraded.append(ns)
-            koopa_count += 1
-        else:
-            upgraded.append(s)
-
-    # Bob-omb Cannons on airship walls (fire Para-Bob-ombs across deck)
-    for x, y in [(400, 400), (800, 432), (1200, 400), (1600, 432), (2000, 400)]:
-        upgraded.append(spr(db.BOB_OMB_CANNON, x, y))
-
-    # Chain Chomps on cannon turret platforms
-    for x, y in [(600, 448), (1000, 432), (1400, 448), (1800, 432)]:
-        upgraded.append(spr(db.CHAIN_CHOMP, x, y))
-
-    # Crowbers patrolling the airship deck
-    for x in [300, 700, 1100, 1500, 1900]:
-        upgraded.append(spr(db.CROWBER, x, 300))
-
-    area1.sprites = upgraded
-    area1.loaded_sprites = sorted(set(s.stype for s in upgraded))
-    arc.set_file('course/course1.bin', serialize_course_bin(area1))
-
-    # ── Area 2: Bowser Jr Boss Room ─────────────────────────────────────────
-    try:
-        area2 = parse_course_bin(arc.get_file('course/course2.bin'))
-        boss_sprites = list(area2.sprites)
-        # Flank the Bowser Jr arena with Fire Bars
-        boss_sprites.append(spr(db.FIRE_BAR, 288, 560, FB_CW))
-        boss_sprites.append(spr(db.FIRE_BAR, 704, 560, FB_CCW))
-        # Extra Hammer Bro flankers
-        boss_sprites.append(spr(db.HAMMER_BRO, 320, 560))
-        boss_sprites.append(spr(db.HAMMER_BRO, 672, 560))
-        area2.sprites = boss_sprites
-        area2.loaded_sprites = sorted(set(s.stype for s in boss_sprites))
-        arc.set_file('course/course2.bin', serialize_course_bin(area2))
-    except (KeyError, Exception):
-        pass
-
-    data = arc.pack()
-    os.makedirs('output/ChaosStation/Stage', exist_ok=True)
-    with open(dst, 'wb') as f:
-        f.write(data)
-    print(f'Modified 8-Airship: The Doomship ({len(data)} bytes)')
-
-
-def create_level_8_ambush():
-    """08-33/34/35: World 8 ambush arenas — lava-themed spring block encounters.
-    Follows the same pattern as World 7 ambush: keeps required sprites
-    (controller, Toad balloons, chest, Lakitu) and replaces spring block layouts.
-    World 8 enemies: Fire Bro, Sledge Bro, Chain Chomp, Big Thwomp, Fire Snake.
-    """
-    import os
-    from tools.u8archive import U8Archive
-    from tools.course_parser import parse_course_bin, serialize_course_bin, Sprite
-    import tools.sprite_db as db
-
-    CONTROLLER   = 454
-    TOAD_BALLOON = 185
-    CHEST        = 203
-    LAKITU       = 54
-    SPRING_BLOCK = 223
-    SD = b'\x00\x00\x00\x00\x00\x00'
-
-    def spr(stype, x, y, sd=SD):
-        return Sprite(stype=stype, x=x, y=y, spritedata=sd, zone_id=0, extra_byte=0)
-
-    def modify_ambush(src_name, dst_name, new_blocks, extra_enemies=None):
-        try:
-            with open(f'extracted files/Stage/{src_name}', 'rb') as f:
-                arc = U8Archive.load(f.read())
-        except Exception as e:
-            print(f"[W8] Skipping {src_name}: {e}")
-            return
-        course = parse_course_bin(arc.get_file('course/course1.bin'))
-
-        kept = [s for s in course.sprites if s.stype != SPRING_BLOCK]
-        for (x, y) in new_blocks:
-            kept.append(spr(SPRING_BLOCK, x, y))
-        if extra_enemies:
-            for (stype, x, y) in extra_enemies:
-                kept.append(spr(stype, x, y))
-
-        course.sprites = kept
-        course.loaded_sprites = sorted(set(s.stype for s in kept))
-        arc.set_file('course/course1.bin', serialize_course_bin(course))
-        os.makedirs('output/ChaosStation/Stage', exist_ok=True)
-        with open(f'output/ChaosStation/Stage/{dst_name}', 'wb') as f:
-            f.write(arc.pack())
-        print(f'  Saved: {dst_name}')
-
-    # --- 08-33 "Lava Springs" ---
-    # 10 spring blocks over 2-tile lava gaps; Fire Bro + Sledge Bro threats
-    lava_springs = [
-        (272, 480), (320, 480), (368, 480), (416, 480), (464, 480),
-        (512, 480), (560, 480), (608, 480), (656, 480), (704, 480),
-        # Center elevated platform
-        (416, 416), (464, 416), (512, 416),
-    ]
-    modify_ambush('08-33.arc', '08-33.arc', lava_springs,
-                  extra_enemies=[(db.FIRE_BRO, 464, 320), (db.SLEDGE_BRO, 512, 352)])
-
-    # --- 08-34 "Chain Chomp Pit" ---
-    # Dense spring floor with Chain Chomps on varied chain lengths
-    chomp_pit = [
-        (256, 480), (304, 480), (352, 480), (400, 480), (448, 480),
-        (496, 480), (544, 480), (592, 480), (640, 480), (688, 480), (736, 480),
-        # Two elevated platforms
-        (352, 416), (400, 416),
-        (592, 416), (640, 416),
-    ]
-    modify_ambush('08-34.arc', '08-34.arc', chomp_pit,
-                  extra_enemies=[
-                      (db.CHAIN_CHOMP, 400, 352),
-                      (db.CHAIN_CHOMP, 592, 352),
-                      (db.BIG_THWOMP,  496, 288),
-                  ])
-
-    # --- 08-35 "Elite Ambush" ---
-    # Two-tier arena: lower floor + elevated center shelf
-    # Hammer Bro on top, Fire Snake on floor, Big Thwomp overhead
-    elite_ambush = [
-        # Lower floor (sparse — dangerous to stand on)
-        (256, 480), (320, 480), (384, 480), (448, 480),
-        (512, 480), (576, 480), (640, 480), (704, 480),
-        # Elevated center shelf
-        (384, 400), (416, 400), (448, 400), (480, 400), (512, 400), (544, 400), (576, 400),
-    ]
-    modify_ambush('08-35.arc', '08-35.arc', elite_ambush,
-                  extra_enemies=[
-                      (db.HAMMER_BRO,  480, 320),
-                      (db.FIRE_SNAKE,  320, 432),
-                      (db.FIRE_SNAKE,  608, 432),
-                      (db.BIG_THWOMP,  496, 256),
-                  ])
-
-    print("Created W8 ambush arenas (08-33/34/35)")
-
-
-def create_level_8_castle():
-    """8-Castle (08-24): Bowser's Fortress — the climactic finale of the entire modpack.
-
-    Vanilla zone layout (parsed from 08-24.arc):
-      Area 1: zone x=512..5408, y=496..768  (floor≈y=720, ceiling≈y=512, height=272px)
-      Area 2: zone x=520..1016, y=480..1344 (boss room, w=496, h=864)
-
-    Area 1 — The Last Gauntlet: Replace all weak enemies, stack EVERY World 8 hazard
-    across 5 pacing sections that fit within the real zone bounds.
-
-    Area 2 — Bowser's Arena: Keep all existing boss-logic sprites. Add flanking hazards
-    strictly within zone bounds (x=520..1016, y=480..1344).
-    """
-    import copy, os
-    from tools.u8archive import U8Archive
-    from tools.course_parser import parse_course_bin, serialize_course_bin, Sprite
-    import tools.sprite_db as db
-
-    src = 'extracted files/Stage/08-24.arc'
-    dst = 'output/ChaosStation/Stage/08-24.arc'
-
-    try:
-        with open(src, 'rb') as f:
-            arc = U8Archive.load(f.read())
-    except Exception as e:
-        print(f"[W8] Skipping 8-Castle: couldn't open {src} — {e}")
-        return
-
-    SD      = b'\x00\x00\x00\x00\x00\x00'
-    FB_CW   = b'\x00\x00\x00\x00\x10\x07'   # clockwise Fire Bar
-    FB_CCW  = b'\x00\x00\x00\x00\x00\x07'   # counter-clockwise Fire Bar
-    FC_TOP  = b'\x00\x00\x00\x00\x01\x00'   # Flame Cannon: ceiling mount, fires down
-    FC_BOT  = b'\x00\x00\x00\x00\x00\x00'   # Flame Cannon: floor mount, fires up
-    GEY_SD  = b'\x00\x00\x00\x00\x00\x21'   # Lava Geyser: medium eruption
-
-    # Real zone bounds for Area 1 (verified from vanilla parse):
-    # x: 512..5408   y: 496..768
-    # Ceiling tiles ≈ y=512   Floor/entrance ≈ y=704   Mid-corridor ≈ y=608
-    CEIL_Y  = 516   # just below ceiling — Thwomps hang here
-    MID_Y   = 608   # mid-corridor — Fire Bars pivot here
-    FLOOR_Y = 704   # floor level — walking enemies stand here
-    UPPER_Y = 560   # upper third — Crowbers, upper Amps
-    LOWER_Y = 672   # lower third — Chain Chomps, lower hazards
-
-    def spr(stype, x, y, sd=SD):
-        return Sprite(stype=stype, x=x, y=y, spritedata=sd, zone_id=0, extra_byte=0)
-
-    # ── Area 1: The Last Gauntlet ────────────────────────────────────────────
-    area1 = parse_course_bin(arc.get_file('course/course1.bin'))
-    new_sprites = []
-    db_count = 0
-
-    # Replace vanilla enemies; keep all decorative/environment sprites intact
-    for s in area1.sprites:
-        if s.stype == db.DRY_BONES:
-            ns = copy.deepcopy(s)
-            ns.stype      = [db.FIRE_BRO, db.HAMMER_BRO, db.SLEDGE_BRO][db_count % 3]
-            ns.spritedata = SD
-            new_sprites.append(ns)
-            db_count += 1
-        elif s.stype == db.GIANT_DRY_BONES:
-            ns = copy.deepcopy(s)
-            ns.stype      = db.SLEDGE_BRO
-            ns.spritedata = SD
-            new_sprites.append(ns)
-        elif s.stype in (db.GOOMBA, db.KOOPA):
-            ns = copy.deepcopy(s)
-            ns.stype      = db.MECHAKOOPA
-            ns.spritedata = SD
-            new_sprites.append(ns)
-        else:
-            new_sprites.append(s)
-
-    # ── Section A (x=700–1400): Fire Bars + Thwomps — warm-up ──
-    # Fire Bar pairs: CW at mid height, CCW offset so they don't sync
-    for i, x in enumerate(range(750, 1400, 320)):
-        new_sprites.append(spr(db.FIRE_BAR, x,       MID_Y,      FB_CW))
-        new_sprites.append(spr(db.FIRE_BAR, x + 100, MID_Y + 48, FB_CCW))
-    # Thwomps drop from ceiling
-    for x in [900, 1150, 1380]:
-        new_sprites.append(spr(db.THWOMP, x, CEIL_Y))
-    # Elite Bros on the floor
-    new_sprites.append(spr(db.FIRE_BRO,   820,  FLOOR_Y))
-    new_sprites.append(spr(db.HAMMER_BRO, 1080, FLOOR_Y))
-    new_sprites.append(spr(db.SLEDGE_BRO, 1330, FLOOR_Y))
-
-    # ── Section B (x=1450–2400): Flame Cannons + Chain Chomps — timing gauntlet ──
-    # Alternating top (ceiling) and bottom (floor) cannons
-    for i, x in enumerate(range(1500, 2400, 300)):
-        if i % 2 == 0:
-            new_sprites.append(spr(db.FLAME_CANNON, x, CEIL_Y + 16, FC_TOP))
-        else:
-            new_sprites.append(spr(db.FLAME_CANNON, x, FLOOR_Y - 16, FC_BOT))
-    # Chain Chomps lurking at floor level
-    for x in [1600, 1950, 2250]:
-        new_sprites.append(spr(db.CHAIN_CHOMP, x, LOWER_Y))
-    # Crowbers swooping overhead
-    for x in [1520, 1820, 2100, 2370]:
-        new_sprites.append(spr(db.CROWBER, x, UPPER_Y))
-
-    # ── Section C (x=2450–3400): Giant Spiked Balls + Flame Jets — dodge corridor ──
-    for x in [2500, 2900, 3200, 3380]:
-        new_sprites.append(spr(db.GIANT_SPIKED_BALL, x, LOWER_Y))
-    # Flame Jets in pairs from the floor
-    for x in [2650, 2950, 3150]:
-        new_sprites.append(spr(db.FLAME_JET_LARGE, x,       FLOOR_Y))
-        new_sprites.append(spr(db.FLAME_JET_LARGE, x + 128, FLOOR_Y))
-    # Lava Geysers between the jets
-    for x in [2750, 3050, 3300]:
-        new_sprites.append(spr(db.LAVA_GEYSER, x, FLOOR_Y + 16, GEY_SD))
-    new_sprites.append(spr(db.BIG_THWOMP, 2800, CEIL_Y))
-    new_sprites.append(spr(db.BIG_THWOMP, 3250, CEIL_Y))
-
-    # ── Section D (x=3450–4500): Amp columns + Banzai Bills — sprint finale ──
-    # Three Amp columns at staggered heights to thread between
-    for x in [3500, 3800, 4100, 4400]:
-        new_sprites.append(spr(db.AMP, x, UPPER_Y))      # upper Amp
-        new_sprites.append(spr(db.AMP, x, MID_Y))        # mid Amp
-        new_sprites.append(spr(db.AMP, x, LOWER_Y))      # lower Amp
-    # Banzai Bill Launchers on the floor — firing right-to-left
-    for x in [3600, 4000, 4350]:
-        new_sprites.append(spr(db.BANZAI_BILL_LAUNCHER, x, FLOOR_Y))
-    # Mecha-Koopas patrolling narrow gaps
-    for x in [3650, 3950, 4200, 4450]:
-        new_sprites.append(spr(db.MECHAKOOPA, x, FLOOR_Y))
-
-    # ── Section E (x=4550–5300): Final Elite Wave — Big Thwomps + Sledge Bros ──
-    for x in [4600, 4900, 5100, 5300]:
-        new_sprites.append(spr(db.BIG_THWOMP, x, CEIL_Y))
-    new_sprites.append(spr(db.SLEDGE_BRO,  4700, FLOOR_Y))
-    new_sprites.append(spr(db.SLEDGE_BRO,  5000, FLOOR_Y))
-    new_sprites.append(spr(db.HAMMER_BRO,  4850, FLOOR_Y))
-    # King Bill in the final open stretch — the last obstacle before the boss door
-    new_sprites.append(spr(db.KING_BILL, 5200, MID_Y))
-    # Dense Crowber flock for the run to the boss door
-    for x in [4580, 4750, 4980, 5120, 5280]:
-        new_sprites.append(spr(db.CROWBER, x, UPPER_Y))
-
-    area1.sprites = new_sprites
-    area1.loaded_sprites = sorted(set(s.stype for s in new_sprites))
-    arc.set_file('course/course1.bin', serialize_course_bin(area1))
-
-    # ── Area 2: Rising-Lava Escape Room ─────────────────────────────────────
-    # This is the post-Bowser escape sequence — NOT a traditional boss arena.
-    # Verified zone: x=520..1016 (w=496), y=480..1344 (h=864)
-    # Player enters from the top (entrance y=496) and must CLIMB DOWN then escape
-    # while lava (LAVA_FILL at y=720) rises from below.
-    # BOSS_ESCAPE_PLATs (type 50) are the crumbling platforms — do NOT remove them.
-    # Vanilla already has 2 Fire Bars: x=528,y=992 (left-low) and x=992,y=960 (right-low).
-    # Strategy: add Fire Bars at MID and UPPER heights, Amps on the climb route,
-    # Crowbers diving through the vertical shaft, Fire Snake near the exit.
-    try:
-        area2 = parse_course_bin(arc.get_file('course/course2.bin'))
-        escape_sprites = list(area2.sprites)
-
-        # Room layout reference (all verified within zone bounds):
-        # x-centre ≈ 768   left wall x≈528   right wall x≈992
-        # top (entry) y≈496   lava surface y≈720   exit y≈1248
-        # escape platforms are scattered from y≈592 to y≈1248
-
-        # ── Extra Fire Bars at mid-height (y≈768-864) ──
-        # Stagger CW/CCW so they don't sync — player must read both
-        escape_sprites.append(spr(db.FIRE_BAR, 576,  800, FB_CW))
-        escape_sprites.append(spr(db.FIRE_BAR, 944,  768, FB_CCW))
-        escape_sprites.append(spr(db.FIRE_BAR, 752,  848, FB_CW))
-
-        # ── Fire Bars at upper section (y≈608-704) — guarding the entry drop ──
-        escape_sprites.append(spr(db.FIRE_BAR, 624,  640, FB_CCW))
-        escape_sprites.append(spr(db.FIRE_BAR, 896,  672, FB_CW))
-
-        # ── Amps floating at key choke points across the shaft ──
-        # Placed at horizontal gaps between the escape platforms so the player
-        # must time their jump around the Amp while the lava closes in below
-        escape_sprites.append(spr(db.AMP, 688,  720))   # just above lava surface
-        escape_sprites.append(spr(db.AMP, 848,  736))   # right side, lava level
-        escape_sprites.append(spr(db.AMP, 608,  880))   # mid-left
-        escape_sprites.append(spr(db.AMP, 912,  912))   # mid-right
-        escape_sprites.append(spr(db.AMP, 752,  992))   # lower centre
-        escape_sprites.append(spr(db.AMP, 656, 1072))   # near exit, left
-        escape_sprites.append(spr(db.AMP, 864, 1072))   # near exit, right
-
-        # ── Crowbers swooping through the vertical shaft ──
-        # They dive at the player while they're trying to land on crumbling platforms
-        for cy in [560, 656, 784, 912, 1040]:
-            escape_sprites.append(spr(db.CROWBER, 768, cy))   # centre diver
-        escape_sprites.append(spr(db.CROWBER, 600, 720))      # left ambush
-        escape_sprites.append(spr(db.CROWBER, 940, 800))      # right ambush
-
-        # ── Fire Snake near the bottom exit — final obstacle ──
-        # Placed just above the exit platform (y≈1200) to block the last jump
-        escape_sprites.append(spr(db.FIRE_SNAKE, 752, 1200))
-
-        area2.sprites = escape_sprites
-        area2.loaded_sprites = sorted(set(s.stype for s in escape_sprites))
-        arc.set_file('course/course2.bin', serialize_course_bin(area2))
-    except (KeyError, Exception) as e:
-        print(f"[W8] Warning: couldn't enhance escape room in 08-24 — {e}")
-
-    data = arc.pack()
-    os.makedirs('output/ChaosStation/Stage', exist_ok=True)
-    with open(dst, 'wb') as f:
-        f.write(data)
-    print(f"Modified 8-Castle: Bowser's Fortress ({len(data)} bytes)")
-
-
-# ═══════════════════════════════════════════════════════════════════
-# WORLD 9 — "Chaos Absolute" — Veteran Challenge Levels
-# ═══════════════════════════════════════════════════════════════════
-
-def create_level_9_1():
-    """9-1: Pixel Perfect — brutally hard precision platforming, zero enemies.
-
-    Every surface is 1×1 tile. Gaps are 5–8 tiles wide (running-jump minimum).
-    Heights vary wildly — massive up/down swings between consecutive platforms.
-    Thwomps act as timing gates on key platforms: player must wait for the
-    Thwomp to rise, then sprint past before it slams back down.
-    Fire Bars rotate on several platforms, shrinking the safe landing window.
-
-    Four sections:
-      A) 1-tile beam crossing with 5-tile gaps — learn the precision
-      B) Extreme height-swing gauntlet — platforms alternate GY and GY-12
-      C) Thwomp timing gates — Thwomps block passage above 1-tile platforms
-      D) Fire Bar finale — 1-tile platforms between spinning Fire Bars to goal
-    Time limit: 250s (tight but fair if precise).
-    """
-    from tools.level_builder import LevelBuilder
-    import tools.sprite_db as db
-
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_STANDARD)
-    a.set_tileset(1, db.TILESET_GRASS)
-    a.set_background(db.BG_ATHLETIC_SKY_1)
-    a.set_time(250)
-
-    GY  = 26   # low platform row
-    GYH = 14   # high platform row (12 tiles up — max jump height is ~7, so must
-               #  land on the high platform from a lower one via stairs/ramps)
-    FB_CW  = b'\x00\x00\x00\x00\x10\x05'
-    FB_CCW = b'\x00\x00\x00\x00\x00\x05'
-
-    a.add_zone(0, 0, 8400, 640, zone_id=0, music=db.MUSIC_ATHLETIC, cam_mode=0, visibility=16)
-    a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 67 * 16, (GY - 1) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-
-    # Starting safe platform (only flat ground in the entire level)
-    a.add_ground(0, GY, 6, 5, tileset=1)
-    a.add_question_block(3, GY - 4, contents=1)
-
-    # ══ SECTION A: 1-tile beams, 5-tile gaps ══
-    # Heights oscillate between GY and GY-4 to force the player to aim up/down
-    beams_a = [
-        (8,  GY),    (14, GY-4),  (20, GY),    (26, GY-2),  (32, GY-6),
-        (38, GY),    (44, GY-4),  (50, GY-2),  (56, GY-7),  (62, GY),
-    ]
-    for bx, by in beams_a:
-        a.add_ground(bx, by, 1, 5, tileset=1)
-    # Star Coin #1 — floating off-route below a high platform, requires a
-    # precise short hop down from the GY-7 beam to grab and land on GY beam
-    a.add_sprite(db.STAR_COIN, 56 * 16, (GY - 10) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 0, 0]))
-
-    # Rest ledge + midway — 12 tiles gives the player a real run-up after respawn
-    a.add_ground(65, GY, 12, 5, tileset=1)
-    a.add_sprite(db.MIDWAY_FLAG, 67 * 16, (GY - 1) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-    # ══ SECTION B: Extreme height-swing — must ride a descending ramp to gain
-    #   speed then launch into high platforms 12 tiles up ══
-    # The trick: 2-tile-wide descending ramp gives running speed, then a
-    # single 1-tile platform at GYH reachable only with full sprint momentum.
-    # Then it drops immediately back to GY, repeat.
-    swing_data = [
-        # (ramp_x, ramp_y_start, target_x, target_y)
-        (72,  GY,     80,  GYH),
-        (83,  GY,     91,  GYH-2),
-        (94,  GY-2,   102, GYH),
-        (106, GY,     114, GYH-4),
-        (117, GY-4,   125, GYH),
-        (128, GY,     136, GYH-2),
-    ]
-    for rx, ry, tx, ty in swing_data:
-        # Descending 2-step ramp
-        a.add_ground(rx,     ry,     1, 5, tileset=1)
-        a.add_ground(rx + 1, ry + 1, 1, 5, tileset=1)
-        # High target platform (1 tile)
-        a.add_ground(tx, ty, 1, 5, tileset=1)
-    # Star Coin #2 — on the highest point between the two tallest swings
-    a.add_sprite(db.STAR_COIN, 114 * 16, (GYH - 7) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 1, 0]))
-
-    # Rest ledge
-    a.add_ground(140, GY, 4, 5, tileset=1)
-
-    # ══ SECTION C: Thwomp timing gates ══
-    # 1-tile platform; Thwomp hangs 1 tile above it.
-    # Player must wait for Thwomp to rise (after it slams), then sprint across.
-    thwomp_plats = [
-        (146, GY),    (152, GY-3),  (158, GY),    (164, GY-5),
-        (170, GY-2),  (176, GY),    (182, GY-4),  (188, GY-1),
-    ]
-    for tx, ty in thwomp_plats:
-        a.add_ground(tx, ty, 1, 5, tileset=1)
-        # Thwomp centred directly above, 1 tile clearance
-        a.add_sprite(db.THWOMP, tx * 16, (ty - 3) * 16)
-    # Star Coin #3 — hovering above the 5th Thwomp, grab during the brief window
-    # when the Thwomp is fully raised
-    a.add_sprite(db.STAR_COIN, 170 * 16, (GY - 8) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 2, 0]))
-
-    # Rest ledge
-    a.add_ground(192, GY, 4, 5, tileset=1)
-
-    # ══ SECTION D: Fire Bar finale — 1-tile platforms between spinning bars ══
-    # Each platform has a Fire Bar whose pivot is on the platform itself.
-    # Player must time the landing between the bar's arms.
-    fb_plats = [
-        (198, GY,   FB_CW),   (205, GY-4,  FB_CCW),
-        (212, GY,   FB_CW),   (219, GY-3,  FB_CCW),
-        (226, GY-6, FB_CW),   (233, GY,    FB_CCW),
-        (240, GY-2, FB_CW),   (247, GY-5,  FB_CCW),
-    ]
-    for fx, fy, fb_sd in fb_plats:
-        a.add_ground(fx, fy, 1, 5, tileset=1)
-        a.add_sprite(db.FIRE_BAR, fx * 16, (fy - 2) * 16, spritedata=fb_sd)
-
-    # Goal platform — wide landing zone so the pole-slide animation has room
-    a.add_ground(252, GY, 14, 5, tileset=1)
-    a.add_sprite(db.GOAL_POLE, 257 * 16, (GY - 1) * 16)
-
-    builder.save('output/ChaosStation/Stage/09-01.arc')
-    print('Created 9-1: Pixel Perfect (1-tile platforms, Thwomp gates, Fire Bar finale)')
-
-
-def create_level_9_2():
-    """9-2: Enemy Flood — no shells allowed.
-
-    ALL Koopa/Paratroopa/Spiny removed — those drop shells that chain-kill
-    everything in a dense level. Every enemy here either can't be stomped
-    (Crowbers dive and move on), revives (Dry Bones), explodes (Bob-ombs —
-    dangerous to chain), shoots back (Bros), or is too large to shell-skip
-    (Chain Chomps, Giant Dry Bones, Sledge Bros, Mecha-Koopas).
-
-    Four waves:
-      W1) Goomba/Paragoomba/Dry Bones ground flood — all stomped safely but
-          Dry Bones revive so the floor stays dangerous the whole time
-      W2) Bros gauntlet — Hammer/Fire/Sledge/Ice on elevated platforms,
-          shooting down at the player on the floor
-      W3) Aerial assault — Crowbers + Para-Bob-ombs; player can't use a shell
-          to clear the sky, must dodge manually
-      W4) Elite finale — Chain Chomps + Giant Dry Bones + Mecha-Koopas +
-          Sledge Bros; big enemies that each require individual attention
-    """
-    from tools.level_builder import LevelBuilder
-    import tools.sprite_db as db
-
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_STANDARD)
-    a.set_tileset(1, db.TILESET_CASTLE)
-    a.set_background(db.BG_CASTLE)
-    a.set_time(500)
-
-    GY = 26
-    a.add_zone(0, 0, 7200, 640, zone_id=0, music=db.MUSIC_CASTLE, cam_mode=0, visibility=16)
-    a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 93 * 16, (GY - 1) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-
-    FLOOR  = (GY - 1) * 16
-    LEDGE  = (GY - 10) * 16
-    AIR    = (GY - 12) * 16
-
-    # ── Terrain layout ──
-    # Wave 1 (x=0–92): solid floor — safe to learn
-    a.add_ground(0, GY, 92, 5, tileset=1)
-
-    # Wave 2 (x=92–200): floor with 5-tile pits every 30 tiles — must jump while
-    # dodging Bros firing from ledges above
-    for seg_start in range(92, 200, 30):
-        a.add_ground(seg_start, GY, 25, 5, tileset=1)
-        # gap of 5 tiles follows each segment
-    # last solid segment connecting to Wave 3
-    a.add_ground(197, GY, 5, 5, tileset=1)
-
-    # Wave 3 (x=202–300): narrower platforms with 6-tile pits — aerial enemies
-    # converge while the floor is broken
-    for seg_start in range(202, 300, 28):
-        a.add_ground(seg_start, GY, 22, 5, tileset=1)
-    a.add_ground(298, GY, 4, 5, tileset=1)
-
-    # Wave 4 (x=302–430): wide pits (8 tiles) — Chain Chomps on the islands,
-    # nowhere to run or wait
-    for seg_start in range(302, 430, 24):
-        a.add_ground(seg_start, GY, 16, 5, tileset=1)
-        # 8-tile pit follows
-    # goal platform
-    a.add_ground(428, GY, 14, 5, tileset=1)
-
-    a.add_question_block(3, GY - 4, contents=1)
-
-    # Elevated ledges (5 tiles wide) every 30 tiles — Bros fire DOWN from these
-    for px in range(30, 420, 30):
-        a.add_ground(px, GY - 9, 5, 3, tileset=1)
-
-    # Fire Bars on the elevated ledges — camping on a ledge to avoid a pit is punished
-    FB_CW  = b'\x00\x00\x00\x00\x10\x04'
-    FB_CCW = b'\x00\x00\x00\x00\x00\x04'
-    for i, px in enumerate(range(30, 420, 60)):   # every other ledge
-        sd = FB_CW if i % 2 == 0 else FB_CCW
-        a.add_sprite(db.FIRE_BAR, (px + 2) * 16, (GY - 10) * 16, spritedata=sd)
-
-    # Thwomps over the pits — hang on ledges directly above the gaps, drop when
-    # the player tries to jump across (one Thwomp every other pit in Wave 2+3)
-    for px in range(118, 300, 60):
-        a.add_sprite(db.THWOMP, px * 16, (GY - 7) * 16)
-
-    # ══ WAVE 1 (x=8–90): ground flood, solid floor — learn pacing ══
-    for ex in range(10, 88, 30):
-        a.add_sprite(db.GOOMBA, ex * 16, FLOOR)
-    for ex in range(22, 88, 30):
-        a.add_sprite(db.DRY_BONES, ex * 16, FLOOR)
-    for ex in range(16, 88, 36):
-        a.add_sprite(db.PARAGOOMBA, ex * 16, AIR)
-    a.add_sprite(db.STAR_COIN, 50 * 16, (GY - 5) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 0, 0]))
-    a.add_sprite(db.MIDWAY_FLAG, 93 * 16, FLOOR, spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-    # ══ WAVE 2 (x=95–200): Bros on ledges, player jumps pits below them ══
-    for ex in range(96, 200, 36):
-        a.add_sprite(db.HAMMER_BRO, ex * 16, LEDGE)
-    for ex in range(114, 200, 36):
-        a.add_sprite(db.FIRE_BRO, ex * 16, LEDGE)
-    for ex in range(140, 200, 40):
-        a.add_sprite(db.SLEDGE_BRO, ex * 16, FLOOR)
-    for ex in range(106, 200, 40):
-        a.add_sprite(db.DRY_BONES, ex * 16, FLOOR)
-    a.add_sprite(db.STAR_COIN, 152 * 16, (GY - 5) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 1, 0]))
-
-    # ══ WAVE 3 (x=205–300): aerial Crowbers + Mechakoopas, broken floor ══
-    for ex in range(206, 300, 28):
-        a.add_sprite(db.CROWBER, ex * 16, AIR)
-    for ex in range(220, 300, 34):
-        a.add_sprite(db.MECHAKOOPA, ex * 16, FLOOR)
-    for ex in range(214, 300, 40):
-        a.add_sprite(db.DRY_BONES, ex * 16, FLOOR)
-
-    # ══ WAVE 4 (x=305–420): Chain Chomps on pit islands — nowhere to camp ══
-    for ex in range(306, 420, 48):
-        a.add_sprite(db.CHAIN_CHOMP, ex * 16, FLOOR)
-    for ex in range(328, 420, 50):
-        a.add_sprite(db.GIANT_DRY_BONES, ex * 16, FLOOR)
-    for ex in range(348, 420, 48):
-        a.add_sprite(db.SLEDGE_BRO, ex * 16, FLOOR)
-    for ex in range(316, 420, 44):
-        a.add_sprite(db.CROWBER, ex * 16, AIR)
-    a.add_sprite(db.STAR_COIN, 375 * 16, (GY - 5) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 2, 0]))
-
-    # Goal pole — on the final platform, well within zone
-    a.add_sprite(db.GOAL_POLE, 432 * 16, FLOOR)
-
-    builder.save('output/ChaosStation/Stage/09-02.arc')
-    print('Created 9-2: Enemy Flood (pits + Thwomps + Fire Bars for terrain pressure)')
-
-
-def create_level_9_3():
-    """9-3: Plunge — vertical descent through a Boo-haunted shaft.
-
-    Redesigned from scratch: the original concept (gravity inversion) isn't
-    a real NSMBW mechanic. This replacement is genuinely "upside-down" in
-    spirit: instead of running right, you must FALL DOWN through a tall vertical
-    shaft. The goal pole is at the VERY BOTTOM. Going up is safe; going down
-    is dangerous. Wrong jumps = fall past your target platform into enemies.
-
-    Shaft layout (zone is 4 tiles wide, 260 tiles tall):
-      Top (y=0):  entrance — player starts here
-      Mid (y=130): midway flag on a ledge
-      Bottom (y=252): goal pole on the floor
-    Platforms are staggered left-right so the player zigzags while falling.
-    Big Boos patrol the shaft. Fire Snakes lurk on the wider ledges.
-    Star Coins are in dangerous side alcoves that require precision fall-landings.
-    """
-    from tools.level_builder import LevelBuilder
-    import tools.sprite_db as db
-
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_STANDARD)
-    a.set_tileset(1, db.TILESET_CAVE)
-    a.set_background(db.BG_UNDERGROUND)
-    a.set_time(400)
-
-    # Vertical tower-style zone. cam_mode=3 is the proven vertical mode used by
-    # every working tower in this mod (4-tower, 5-tower, etc). cam_mode=1 and a
-    # 4096px tall zone crashed on load.
-    SHAFT_W = 30   # shaft inner width in tiles (480px — matches 4-tower)
-    SHAFT_H = 200  # shaft height in tiles (3200px — safe tower height)
-    WALL_T  = 2    # wall thickness in tiles
-
-    a.add_zone(0, 0, SHAFT_W * 16, SHAFT_H * 16, zone_id=0,
-               music=db.MUSIC_GHOST_HOUSE, cam_mode=3, visibility=16)
-
-    # Left wall full height. Right wall full height EXCEPT near the bottom
-    # where the goal pole needs open space for the victory slide animation.
-    a.add_ground(0, 0, WALL_T, SHAFT_H, tileset=1)
-    a.add_ground(SHAFT_W - WALL_T, 0, WALL_T, SHAFT_H - 12, tileset=1)
-
-    # Ceiling (top cap)
-    a.add_ground(0, 0, SHAFT_W, WALL_T, tileset=1)
-    # Floor (bottom)
-    a.add_ground(0, SHAFT_H - WALL_T, SHAFT_W, WALL_T + 2, tileset=1)
-
-    # Player entrance at the top, just below the ceiling
-    a.add_entrance(0, (SHAFT_W // 2) * 16, (WALL_T + 2) * 16,
-                   etype=db.ENTRANCE_NORMAL)
-    # Midway respawn: i=11 in loop → right_x=24, plat_y=87; flag at (25,85)
-    a.add_entrance(1, 25 * 16, 85 * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)
-
-    # Staggered platforms — alternating left-anchored and right-anchored
-    # Each platform is 6 tiles wide, leaving an 10-tile gap on the other side
-    # In a 20-tile shaft a 10-tile gap is JUST wide enough for a Big Boo to patrol
-    # Narrower platforms (3 tiles instead of 6) and tighter spacing make every
-    # landing precise. Fire Bars on most platforms are the real threat — Boos
-    # alone are too easy because the player can just keep moving downward.
-    PLAT_W = 3
-    plat_y = WALL_T + 8
-
-    left_x  = WALL_T + 1
-    right_x = SHAFT_W - WALL_T - PLAT_W - 1
-
-    for i in range(22):
-        px = left_x if i % 2 == 0 else right_x
-        a.add_ground(px, plat_y, PLAT_W, 1, tileset=1)
-
-        # Fire Bar on most platforms — alternating CW/CCW. spritedata byte 4
-        # length=2, byte 5 direction.
-        if i % 3 != 0:
-            direction = 0x10 if i % 2 == 0 else 0x00
-            a.add_sprite(db.FIRE_BAR, (px + 1) * 16, (plat_y - 1) * 16,
-                         spritedata=bytes([0, 0, 0, 0, direction, 0x02]))
-
-        # Big Boo on every platform — patrols the gap, blocks vertical fall lanes
-        boo_x = (right_x + 1) if i % 2 == 0 else (left_x + 1)
-        a.add_sprite(db.BIG_BOO, boo_x * 16, (plat_y - 1) * 16)
-
-        if i == 11:
-            a.add_sprite(db.MIDWAY_FLAG, (px + 1) * 16, (plat_y - 2) * 16,
-                         spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-        plat_y += 7   # tighter vertical spacing — 7 tiles instead of 9
-
-    # Star Coins in tight side alcoves
-    sc1_y = WALL_T + 22
-    a.add_ground(WALL_T, sc1_y, 3, 1, tileset=1)
-    a.add_sprite(db.STAR_COIN, (WALL_T + 1) * 16, (sc1_y - 2) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 0, 0]))
-
-    sc2_y = WALL_T + 90
-    a.add_ground(SHAFT_W - WALL_T - 3, sc2_y, 3, 1, tileset=1)
-    a.add_sprite(db.STAR_COIN, (SHAFT_W - WALL_T - 2) * 16, (sc2_y - 2) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 1, 0]))
-
-    sc3_y = SHAFT_H - WALL_T - 12
-    a.add_ground(SHAFT_W // 2 - 1, sc3_y, 3, 1, tileset=1)
-    a.add_sprite(db.STAR_COIN, (SHAFT_W // 2) * 16, (sc3_y - 2) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 2, 0]))
-    for bx in [WALL_T + 2, SHAFT_W - WALL_T - 3]:
-        a.add_sprite(db.BIG_BOO, bx * 16, sc3_y * 16)
-
-    # Dense Swoopers — every 5 tiles on alternating walls. They wake up when
-    # the player passes underneath, so falling slowly = death.
-    for idx, sy in enumerate(range(WALL_T + 6, SHAFT_H - 8, 5)):
-        wall_x = (WALL_T + 1) if idx % 2 == 0 else (SHAFT_W - WALL_T - 2)
-        a.add_sprite(db.SWOOP, wall_x * 16, sy * 16)
-
-    # Goal pole on the shaft floor — placed left-of-center so victory
-    # animation has clear space on the right (where the wall has been removed)
-    a.add_sprite(db.GOAL_POLE, (WALL_T + 4) * 16,
-                 (SHAFT_H - WALL_T - 2) * 16)
-
-    builder.save('output/ChaosStation/Stage/09-03.arc')
-    print('Created 9-3: Plunge (vertical descent shaft, Boos, Fire Snakes)')
-
-
-def create_level_9_4():
-    """9-4: Ghost Maze — full darkness, multi-room branching maze.
-
-    A grid of rooms connected by vertical shafts and horizontal passages.
-    The player enters at the top-left. The goal is at the bottom-right.
-    The maze has multiple paths: three routes lead down through different
-    rooms; two dead-end in trap rooms, only one reaches the goal.
-    Every room is pitch black and infested with ghosts.
-    """
-    from tools.level_builder import LevelBuilder
-    import tools.sprite_db as db
-
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_STANDARD)
-    a.set_tileset(1, db.TILESET_GHOST_HOUSE)
-    a.set_background(db.BG_GHOST_HOUSE)
-    a.set_time(400)
-
-    # Grid: 4 rooms wide × 3 rooms tall
-    # Each room: 28 tiles wide × 14 tiles tall (448×224)
-    # Walls between rooms: 2 tiles thick
-    ROOM_W = 28
-    ROOM_H = 14
-    COLS   = 4
-    ROWS   = 3
-    WALL   = 2
-
-    total_w = COLS * (ROOM_W + WALL) + WALL
-    total_h = ROWS * (ROOM_H + WALL) + WALL
-
-    a.add_zone(0, 0, total_w * 16, total_h * 16, zone_id=0,
-               music=db.MUSIC_GHOST_HOUSE, cam_mode=0, visibility=36,
-               model_dark=12, terrain_dark=0)
-
-    def room_origin(cx, cy):
-        return (WALL + cx * (ROOM_W + WALL), WALL + cy * (ROOM_H + WALL))
-
-    # Outer walls (top, bottom, left, right)
-    a.add_ground(0, 0, total_w, WALL, tileset=1)                 # ceiling
-    a.add_ground(0, total_h - WALL, total_w, WALL + 2, tileset=1)  # floor
-    a.add_ground(0, 0, WALL, total_h, tileset=1)                 # left
-    a.add_ground(total_w - WALL, 0, WALL, total_h, tileset=1)    # right
-
-    # Vertical walls between rooms (every column)
-    for c in range(1, COLS):
-        vx = WALL + c * (ROOM_W + WALL) - WALL
-        a.add_ground(vx, 0, WALL, total_h, tileset=1)
-    # Horizontal walls between rows (every row)
-    for r in range(1, ROWS):
-        vy = WALL + r * (ROOM_H + WALL) - WALL
-        a.add_ground(0, vy, total_w, WALL, tileset=1)
-
-    # PASSAGES — carve openings through the walls using LAYER-0 object
-    # (we can't "remove" placed tiles, so we re-place FLOOR tiles OVER the
-    # wall sections we want to be passable — but this won't work because
-    # tiles are additive, not subtractive). Instead we place solid walls
-    # only in the SEGMENTS that are NOT passages. Rewrite wall placement:
-    # Simpler: skip filling the wall where passages go.
-
-    # Reset: recreate walls with passages this time by not using the bulk add.
-    # We will bypass the above full walls by adding coin hints, enemies, and
-    # relying on the fact that we just made passages WHERE NEEDED by omitting
-    # wall segments in a *different* approach: create walls only with gaps.
-    # Since we already added the full walls, we instead punch through with
-    # question-less bricks — actually there's no "remove tile" method.
-    #
-    # Better approach: undo the above and redraw walls segmented.
-    # Since Python can't undo, we ADD a second layer of open floors over
-    # the passage tiles using layer-0 where tile collisions are ignored... NO.
-    #
-    # Cleanest: restart — rebuild walls with gaps from scratch. We'll do so
-    # by building a fresh list. Clear the builder's layer1 objects that we
-    # just added. That's hacky — instead, let's use a cleaner strategy:
-    # build the maze with OPEN corridors by only placing wall segments
-    # around passages. Below we clear a.layer1 and rebuild.
-    a.area.layer1 = []   # wipe the walls we just added
-
-    # Outer boundary (unchanged — full box)
-    a.add_ground(0, 0, total_w, WALL, tileset=1)
-    a.add_ground(0, total_h - WALL, total_w, WALL + 2, tileset=1)
-    a.add_ground(0, 0, WALL, total_h, tileset=1)
-    a.add_ground(total_w - WALL, 0, WALL, total_h, tileset=1)
-
-    # Passage layout (col, row, 'right'|'down') — openings to neighbor room
-    # Design: S-path from (0,0) → (0,1) → (1,1) → (2,1) → (2,2) → (3,2)
-    # Plus some branching dead ends for exploration.
-    passages = [
-        (0, 0, 'down'),   # enter room (0,0) fall to (0,1)
-        (0, 1, 'right'),  # (0,1) → (1,1)
-        (0, 1, 'down'),   # (0,1) → (0,2) — DEAD END (star coin 1)
-        (1, 1, 'right'),  # (1,1) → (2,1)
-        (1, 1, 'down'),   # (1,1) → (1,2) — DEAD END (star coin 2)
-        (2, 1, 'right'),  # (2,1) → (3,1) — DEAD END (star coin 3)
-        (2, 1, 'down'),   # (2,1) → (2,2)
-        (2, 2, 'right'),  # (2,2) → (3,2) GOAL ROOM
-    ]
-    passage_set = set(passages)
-
-    def has_passage(c, r, direction):
-        return (c, r, direction) in passage_set
-
-    # Vertical walls between cols (segmented to allow passages)
-    for c in range(1, COLS):
-        vx = WALL + c * (ROOM_W + WALL) - WALL
-        for r in range(ROWS):
-            ry = WALL + r * (ROOM_H + WALL)
-            if has_passage(c - 1, r, 'right'):
-                # Leave a 4-tile gap in the middle of this wall segment
-                gap_top = ry + ROOM_H // 2 - 2
-                gap_h   = 4
-                # Top piece
-                a.add_ground(vx, ry, WALL, gap_top - ry, tileset=1)
-                # Bottom piece
-                a.add_ground(vx, gap_top + gap_h, WALL,
-                             ry + ROOM_H - (gap_top + gap_h), tileset=1)
-            else:
-                a.add_ground(vx, ry, WALL, ROOM_H, tileset=1)
-
-    # Horizontal walls between rows
-    for r in range(1, ROWS):
-        vy = WALL + r * (ROOM_H + WALL) - WALL
-        for c in range(COLS):
-            cx = WALL + c * (ROOM_W + WALL)
-            if has_passage(c, r - 1, 'down'):
-                gap_left = cx + ROOM_W // 2 - 2
-                gap_w    = 5
-                a.add_ground(cx, vy, gap_left - cx, WALL, tileset=1)
-                a.add_ground(gap_left + gap_w, vy,
-                             cx + ROOM_W - (gap_left + gap_w), WALL, tileset=1)
-            else:
-                a.add_ground(cx, vy, ROOM_W, WALL, tileset=1)
-
-    # Entrance in top-left room
-    ox, oy = room_origin(0, 0)
-    a.add_entrance(0, (ox + 2) * 16, (oy + ROOM_H - 2) * 16,
-                   etype=db.ENTRANCE_NORMAL)
-
-    # Populate every room with ghosts
-    for c in range(COLS):
-        for r in range(ROWS):
-            ox, oy = room_origin(c, r)
-            # 2 Big Boos per room, varied positions
-            a.add_sprite(db.BIG_BOO, (ox + 6) * 16,           (oy + 4) * 16)
-            a.add_sprite(db.BIG_BOO, (ox + ROOM_W - 6) * 16,  (oy + ROOM_H - 4) * 16)
-            # Swoopers on the ceiling
-            a.add_sprite(db.SWOOP, (ox + ROOM_W // 2) * 16, (oy + 2) * 16)
-
-    # Star coins in the 3 dead-end rooms
-    for (c, r, sc_idx) in [(0, 2, 0), (1, 2, 1), (3, 1, 2)]:
-        ox, oy = room_origin(c, r)
-        a.add_sprite(db.STAR_COIN, (ox + ROOM_W // 2) * 16,
-                     (oy + ROOM_H // 2) * 16,
-                     spritedata=bytes([0, 0, 0, 0, sc_idx, 0]))
-
-    # Exit pipe in bottom-right room (3,2) — leads to area 2 (goal room)
-    # Goal pole crashes with many Big Boos active in area 1.
-    ox, oy = room_origin(3, 2)
-    pipe_x = ox + ROOM_W - 8
-    pipe_y = oy + ROOM_H - 3
-    a.add_pipe(pipe_x, pipe_y, height=3)
-    # Entrance warp: player enters pipe down, warps to area 2 entrance 0
-    a.add_entrance(1, pipe_x * 16, (pipe_y - 1) * 16,
-                   etype=db.ENTRANCE_PIPE_DOWN, zone_id=0,
-                   dest_area=2, dest_entrance=0)
-
-    # Midway flag in the middle-middle room (1, 1)
-    ox, oy = room_origin(1, 1)
-    a.add_sprite(db.MIDWAY_FLAG, (ox + ROOM_W // 2) * 16,
-                 (oy + ROOM_H - 2) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-    # ── AREA 2: Simple goal room ──
-    a2 = builder.add_area(2)
-    a2.set_tileset(0, db.TILESET_STANDARD)
-    a2.set_tileset(1, db.TILESET_GHOST_HOUSE)
-    a2.set_background(db.BG_GHOST_HOUSE)
-    a2.set_time(400)
-    a2.add_zone(0, 0, 640, 320, zone_id=0, music=db.MUSIC_GHOST_HOUSE,
-                cam_mode=0, visibility=36, model_dark=12, terrain_dark=0)
-    a2.add_ground(0, 16, 40, 4, tileset=1)                 # floor
-    a2.add_ground(0, 0, 40, 2, tileset=1)                  # ceiling
-    a2.add_entrance(0, 3 * 16, 15 * 16, etype=db.ENTRANCE_PIPE_UP)
-    a2.add_sprite(db.GOAL_POLE, 30 * 16, 15 * 16)
-
-    builder.save('output/ChaosStation/Stage/09-04.arc')
-    print('Created 9-4: Ghost Maze (4×3 grid, pipe to goal room)')
-
-
-def create_level_9_5():
-    """9-5: Snowfire — contradictory biome.
-
-    Lava fill at the bottom floor; icicles falling from ice ceiling above.
-    Both hazards converge on a narrow middle corridor. Ice Bros and Fire Bros
-    face each other on opposite walls, filling the corridor with cross-fire.
-
-    Sections: intro corridor → icicle storm zone → cross-fire section →
-    final sprint with icicles + lava geysers + Crowbers.
-    """
-    from tools.level_builder import LevelBuilder
-    import tools.sprite_db as db
-
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_STANDARD)
-    a.set_tileset(1, db.TILESET_SNOW)
-    a.set_background(db.BG_SNOW)
-    a.set_time(400)
-
-    GY   = 26   # platform floor row
-    LAVY = GY + 4   # lava surface row (4 below ground)
-    CY   = 4        # ceiling row
-
-    a.add_zone(0, 0, 8000, 640, zone_id=0, music=db.MUSIC_SNOW, cam_mode=0, visibility=16)
-    a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 82 * 16, (GY - 1) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-
-    # Lava fill at the bottom — instant death if you fall
-    a.add_sprite(db.LAVA_FILL, 0, LAVY * 16, spritedata=b'\x00\x00\x00\x00\x01\x00')
-    # Ice ceiling slab (split to avoid 500-tile object crash)
-    a.add_ground(0,   CY, 250, 3, tileset=1)
-    a.add_ground(250, CY, 220, 3, tileset=1)
-    # Main platform floor (split to avoid object width cap)
-    a.add_ground(0,   GY, 250, 3, tileset=1)
-    a.add_ground(250, GY, 220, 3, tileset=1)
-    a.add_question_block(3, GY - 4, contents=1)
-
-    # ══ SECTION A (x=0–128): Intro — learn both hazards ══
-    # Icicles every 14 tiles (was 8) — learn the rhythm without being overwhelmed
-    for ix in range(6, 80, 14):
-        a.add_sprite(db.ICICLE, ix * 16, (CY + 3) * 16)
-    for gx in range(8, 80, 20):
-        a.add_sprite(db.LAVA_GEYSER, gx * 16, (LAVY - 1) * 16,
-                     spritedata=b'\x00\x00\x00\x00\x00\x21')
-    # Crowbers make the intro feel alive — passive hazards alone feel empty
-    for cx in range(12, 78, 18):
-        a.add_sprite(db.CROWBER, cx * 16, (GY - 8) * 16)
-    a.add_sprite(db.STAR_COIN, 40 * 16, (GY - 4) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 0, 0]))
-    a.add_sprite(db.MIDWAY_FLAG, 82 * 16, (GY - 1) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-    # ══ SECTION B (x=128–256): Icicle storm + meteor shower ══
-    # Every 8 tiles so there are gaps to stand in
-    for ix in range(82, 162, 8):
-        a.add_sprite(db.ICICLE, ix * 16, (CY + 3) * 16)
-    # VOLCANO_ROCK meteor spawners — rains falling rocks from above
-    for mx in range(90, 162, 20):
-        a.add_sprite(db.VOLCANO_ROCK, mx * 16, 0)
-    # Ice Bros on floor ledges
-    for px in range(86, 162, 22):
-        a.add_ground(px, GY - 5, 3, 3, tileset=1)
-        a.add_sprite(db.ICE_BRO, px * 16, (GY - 6) * 16)
-    for gx in range(92, 162, 24):
-        a.add_sprite(db.LAVA_GEYSER, gx * 16, (LAVY - 1) * 16,
-                     spritedata=b'\x00\x00\x00\x00\x00\x21')
-    a.add_sprite(db.STAR_COIN, 122 * 16, (GY - 3) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 1, 0]))
-
-    # ══ SECTION C (x=256–400): Cross-fire — Ice Bros + Fire Bros on opposite walls ══
-    for px in range(165, 252, 20):
-        a.add_ground(px, GY - 5, 3, 3, tileset=1)
-        a.add_ground(px + 10, GY - 9, 3, 3, tileset=1)
-    for bx in range(167, 252, 20):
-        a.add_sprite(db.ICE_BRO,  bx * 16,        (GY - 6) * 16)
-        a.add_sprite(db.FIRE_BRO, (bx + 10) * 16, (GY - 10) * 16)
-    for ix in range(165, 252, 10):
-        a.add_sprite(db.ICICLE, ix * 16, (CY + 3) * 16)
-    for cx in range(170, 252, 16):
-        a.add_sprite(db.CROWBER, cx * 16, (GY - 8) * 16)
-    a.add_sprite(db.STAR_COIN, 208 * 16, (GY - 12) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 2, 0]))
-
-    # ══ SECTION D (x=400–500): Final sprint — all hazards at maximum ══
-    for ix in range(254, 496, 8):
-        a.add_sprite(db.ICICLE, ix * 16, (CY + 3) * 16)
-    # Meteor storm in the final section — dodge rocks AND icicles simultaneously
-    for mx in range(258, 496, 16):
-        a.add_sprite(db.VOLCANO_ROCK, mx * 16, 0)
-    for gx in range(256, 496, 16):
-        a.add_sprite(db.LAVA_GEYSER, gx * 16, (LAVY - 1) * 16,
-                     spritedata=b'\x00\x00\x00\x00\x00\x21')
-    for cx in range(260, 496, 18):
-        a.add_sprite(db.CROWBER, cx * 16, (GY - 8) * 16)
-    for bx in range(262, 496, 28):
-        a.add_sprite(db.ICE_BRO,  bx * 16,        (GY - 1) * 16)
-        a.add_sprite(db.FIRE_BRO, (bx + 14) * 16, (GY - 1) * 16)
-    for hx in range(270, 496, 40):
-        a.add_sprite(db.HAMMER_BRO, hx * 16, (GY - 1) * 16)
-
-    # End platform + goal — moved 30 tiles left so pole is fully within zone
-    a.add_ground(462, GY, 6, 5, tileset=1)
-    a.add_sprite(db.GOAL_POLE, 465 * 16, (GY - 1) * 16)
-
-    builder.save('output/ChaosStation/Stage/09-05.arc')
-    print('Created 9-5: Snowfire (lava + ice simultaneously)')
-
-
-def create_level_9_6():
-    """9-6: King Bill Alley — dodge the unkillable.
-
-    Open lava sky. King Bills continuously cross from right to left in dense
-    intervals. The player has only narrow floating island platforms to stand on.
-    Must time every move around King Bills that fill the vertical space.
-    Banzai Bills add secondary pressure. Podoboos from lava below.
-
-    Sections: single-direction warm-up → dense crossing zone →
-    island sprint → sprint to goal while Bills rain.
-    """
-    from tools.level_builder import LevelBuilder
-    import tools.sprite_db as db
-
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_STANDARD)
-    a.set_tileset(1, db.TILESET_KOOPA_OUT)
-    a.set_background(db.BG_LAVA)
-    a.set_time(400)
-
-    GY   = 26
-    LAVY = (GY + 3) * 16   # lava surface in pixels
-
-    a.add_zone(0, 0, 8800, 640, zone_id=0, music=db.MUSIC_LAVA, cam_mode=0, visibility=16)
-    a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 200 * 16, (GY - 1) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-
-    # Lava floor
-    a.add_sprite(db.LAVA_FILL, 0, LAVY, spritedata=b'\x00\x00\x00\x00\x01\x00')
-
-    # Starting platform
-    a.add_ground(0, GY, 8, 5, tileset=1)
-    a.add_question_block(4, GY - 4, contents=1)
-
-    # Floating islands — only 1 tile wide. One bad landing = lava.
-    # Varied heights so the player can never settle into a comfortable rhythm.
-    island_xs = list(range(12, 522, 10))
-    island_ys_pattern = [GY, GY - 3, GY - 1, GY - 5, GY - 2, GY - 4, GY - 1, GY]
-    for i, ix in enumerate(island_xs):
-        iy = island_ys_pattern[i % len(island_ys_pattern)]
-        a.add_ground(ix, iy, 1, 4, tileset=1)  # 1 tile wide — no margin for error
-
-    # King Bills every 8 tiles (was 14) — more frequent, harder to time
-    king_bill_spacing = 8
-    king_bill_ys = [(GY - 12) * 16, (GY - 6) * 16, (GY - 2) * 16]
-    for i, kx in enumerate(range(40, 530, king_bill_spacing)):
-        kb_y = king_bill_ys[i % 3]
-        a.add_sprite(db.KING_BILL, kx * 16, kb_y)
-
-    # Banzai Bills from left side (secondary threat)
-    for bx in range(15, 480, 30):
-        a.add_sprite(db.BANZAI_BILL_LAUNCHER, bx * 16, (GY - 1) * 16)
-
-    # Podoboos from lava
-    for px in range(8, 525, 18):
-        a.add_sprite(db.PODOBOO, px * 16, LAVY,
-                     spritedata=b'\x00\x00\x00\x00\x00\x02')
-
-    # Crowbers overhead
-    for cx in range(20, 510, 14):
-        a.add_sprite(db.CROWBER, cx * 16, (GY - 12) * 16)
-
-    # Star Coins — on isolated islands deep in King Bill territory
-    a.add_sprite(db.STAR_COIN, 120 * 16, (GY - 6) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 0, 0]))
-    a.add_sprite(db.STAR_COIN, 280 * 16, (GY - 2) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 1, 0]))
-    a.add_sprite(db.STAR_COIN, 440 * 16, (GY - 10) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 2, 0]))
-
-    a.add_sprite(db.MIDWAY_FLAG, 200 * 16, (GY - 1) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-    # End platform + goal — zone is 8800px (550t) so 535t is safely inside
-    a.add_ground(530, GY, 10, 5, tileset=1)
-    a.add_sprite(db.GOAL_POLE, 535 * 16, (GY - 1) * 16)
-
-    builder.save('output/ChaosStation/Stage/09-06.arc')
-    print('Created 9-6: King Bill Alley (screen-filling bullets from all sides)')
-
-
-def create_level_9_7():
-    """9-7: Rotor Hell — the Fire Bar colosseum.
-
-    Redesigned from "Minimal Matter" (too similar to 9-1 Pixel Perfect).
-    Here the gimmick is FIRE BAR OVERLOAD: the whole level is a corridor
-    filled with dozens of Fire Bars spinning CW/CCW, packed so densely that
-    the player must read rotation patterns, time dashes, and duck-slide
-    between blades. Wide platforms (so terrain isn't the puzzle — the bars are).
-
-    Sections:
-      A) Single-bar warm-up — learn the timing
-      B) Paired bars (CW+CCW) — thread the pinch point
-      C) Bar tunnel — bars on ceiling AND floor
-      D) Bar wheel — one giant cluster, then sprint to goal
-    """
-    from tools.level_builder import LevelBuilder
-    import tools.sprite_db as db
-
-    builder = LevelBuilder()
-    a = builder.add_area(1)
-    a.set_tileset(0, db.TILESET_STANDARD)
-    a.set_tileset(1, db.TILESET_CASTLE)
-    a.set_background(db.BG_CASTLE)
-    a.set_time(400)
-
-    GY = 26
-
-    # Zone 7600px wide — goal pole at 444t=7104px needs 496px clearance from edge
-    a.add_zone(0, 0, 7600, 512, zone_id=0, music=db.MUSIC_CASTLE, cam_mode=0, visibility=16)
-    a.add_entrance(0, 3 * 16, (GY - 2) * 16, etype=db.ENTRANCE_NORMAL)
-    a.add_entrance(1, 112 * 16, (GY - 1) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
-
-    # Continuous wide floor + ceiling (split to stay under object width cap)
-    a.add_ground(0,   GY, 250, 5, tileset=1)
-    a.add_ground(250, GY, 225, 5, tileset=1)
-    a.add_ground(0,   2,  250, 3, tileset=1)  # ceiling band
-    a.add_ground(250, 2,  225, 3, tileset=1)
-
-    FB_CW_L  = b'\x00\x00\x00\x00\x10\x06'   # long CW bar
-    FB_CCW_L = b'\x00\x00\x00\x00\x00\x06'
-    FB_CW_S  = b'\x00\x00\x00\x00\x10\x04'   # shorter bar
-    FB_CCW_S = b'\x00\x00\x00\x00\x00\x04'
-
-    # ── SECTION A (x=8–110): paired CW+CCW every 8 tiles (no breathing room) ──
-    # Bars at two heights per column; player must time both simultaneously
-    for i, bx in enumerate(range(10, 110, 8)):
-        sd_lo = FB_CW_S  if i % 2 == 0 else FB_CCW_S
-        sd_hi = FB_CCW_L if i % 2 == 0 else FB_CW_L
-        a.add_sprite(db.FIRE_BAR, bx * 16, (GY - 3) * 16, spritedata=sd_lo)
-        a.add_sprite(db.FIRE_BAR, bx * 16, (GY - 9) * 16, spritedata=sd_hi)
-    # Hammer Bros between every 3rd pair — can't wait them out, bars keep spinning
-    for hx in range(18, 110, 24):
-        a.add_sprite(db.HAMMER_BRO, hx * 16, (GY - 1) * 16)
-    a.add_sprite(db.STAR_COIN, 60 * 16, (GY - 14) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 0, 0]))
-
-    a.add_sprite(db.MIDWAY_FLAG, 112 * 16, (GY - 1) * 16, spritedata=b'\x00\x00\x00\x01\x00\x00')
-
-    # ── SECTION B (x=115–230): ceiling + floor bars (tunnel of death) ──
-    # Floor bars sweep upward, ceiling bars sweep down — safe window is 2 tiles tall
-    for i, bx in enumerate(range(116, 230, 7)):
-        if i % 3 == 0:
-            # Triple stacked: floor + mid + ceiling
-            a.add_sprite(db.FIRE_BAR, bx * 16, (GY - 2) * 16, spritedata=FB_CW_L)
-            a.add_sprite(db.FIRE_BAR, bx * 16, (GY - 7) * 16, spritedata=FB_CCW_L)
-            a.add_sprite(db.FIRE_BAR, bx * 16,  5 * 16,        spritedata=FB_CW_S)
-        else:
-            a.add_sprite(db.FIRE_BAR, bx * 16, (GY - 2) * 16, spritedata=FB_CCW_L)
-            a.add_sprite(db.FIRE_BAR, bx * 16,  5 * 16,        spritedata=FB_CW_L)
-    for cx in range(122, 230, 20):
-        a.add_sprite(db.CHAIN_CHOMP, cx * 16, (GY - 1) * 16)
-    a.add_sprite(db.STAR_COIN, 175 * 16, (GY - 6) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 1, 0]))
-
-    # ── SECTION C (x=235–350): bar wheels — 3-bar clusters every 14 tiles ──
-    # Each cluster: long CW, short CCW, offset long — overlapping arcs
-    for i, cx in enumerate(range(238, 350, 14)):
-        sd_a = FB_CW_L  if i % 2 == 0 else FB_CCW_L
-        sd_b = FB_CCW_S if i % 2 == 0 else FB_CW_S
-        sd_c = FB_CW_L  if i % 3 == 0 else FB_CCW_L
-        a.add_sprite(db.FIRE_BAR, cx * 16,       (GY - 6) * 16, spritedata=sd_a)
-        a.add_sprite(db.FIRE_BAR, cx * 16,       (GY - 6) * 16, spritedata=sd_b)
-        a.add_sprite(db.FIRE_BAR, (cx + 3) * 16, (GY - 6) * 16, spritedata=sd_c)
-    # Sledge Bros anchor the gaps — player can't idle
-    for sx in range(248, 350, 28):
-        a.add_sprite(db.SLEDGE_BRO, sx * 16, (GY - 1) * 16)
-
-    # ── SECTION D (x=355–440): sprint gauntlet — single bars every 6 tiles ──
-    # Fastest density yet — must move continuously, no standing still
-    for i, bx in enumerate(range(358, 438, 6)):
-        sd = FB_CW_L if i % 2 == 0 else FB_CCW_L
-        a.add_sprite(db.FIRE_BAR, bx * 16, (GY - 5) * 16, spritedata=sd)
-    for hx in range(362, 438, 18):
-        a.add_sprite(db.HAMMER_BRO, hx * 16, (GY - 1) * 16)
-    a.add_sprite(db.STAR_COIN, 398 * 16, (GY - 10) * 16,
-                 spritedata=bytes([0, 0, 0, 0, 2, 0]))
-
-    # Goal: open landing past final bar — pole well within zone
-    a.add_sprite(db.GOAL_POLE, 444 * 16, (GY - 1) * 16)
-
-    builder.save('output/ChaosStation/Stage/09-07.arc')
-    print('Created 9-7: Rotor Hell (Fire Bar colosseum)')
-
-
-def create_level_9_8():
-    """9-8: Chaos Absolute — the true final level of the mod.
-
-    Built on the vanilla 09-08 base to preserve the zone structure and any
-    hardcoded game expectations (credits trigger, world-map flags, etc.).
-    Vanilla content (sprites + terrain) is wiped and replaced with our
-    8-world-callback gauntlet compressed into the vanilla zone dimensions.
-
-    Vanilla zone: x=256, y=384, w=8400, h=384 (16px offset, 24-tile corridor).
-    All our tile/sprite coords are given relative to zone origin.
-    """
-    import copy
-    from tools.course_parser import (parse_course_bin, serialize_course_bin,
-                                      parse_layer_data, serialize_layer_data,
-                                      Sprite, LayerObject, Entrance)
-    from tools.u8archive import U8Archive
-    import tools.sprite_db as db
-
-    # Load vanilla base — preserves tileset names, zone record, settings block,
-    # boundings, and any controller/path data the game needs for 9-8.
-    with open('extracted files/Stage/09-08.arc', 'rb') as f:
-        arc = U8Archive.load(f.read())
-
-    area = parse_course_bin(arc.get_file('course/course1.bin'))
-    layer1 = parse_layer_data(arc.get_file('course/course1_bgdatL1.bin'))
-
-    # Zone origin in tile units (vanilla: x=256px=16t, y=384px=24t)
-    ZX = area.zones[0].x // 16   # 16
-    ZY = area.zones[0].y // 16   # 24
-    ZW = area.zones[0].w // 16   # 525 (8400/16)
-    ZH = area.zones[0].h // 16   # 24  (384/16)
-
-    # Time limit
-    area.settings.time_limit = 600
-
-    # Keep only vanilla sprites that are pure event controllers (low counts,
-    # no active entities). Remove the bulk entity-spawners that overflow the engine:
-    #   78  ×61 — unknown bulk entity
-    #   175 ×9  — Flying ? Blocks
-    #   176 ×1  — Roulette Block
-    #   236 ×8  — Cloud
-    #   237 ×88 — Cloud spawners (the bounce-cloud flood)
-    #   343 ×28 — Fuzzies on track
-    #   20  ×14 — vanilla Goombas (replaced by ours)
-    #   32  ×2  — vanilla Star Coins (replaced by ours)
-    #   113 ×1  — vanilla Goal Pole (replaced by ours)
-    # Keep: 41 P-Switch, 44, 91, 144 Red Coins, 147 Coins, 155, 156 Red Ring,
-    #        310/326/393/422/446/459 event controllers
-    ENTITY_REMOVE = {20, 32, 78, 113, 175, 176, 236, 237, 343}
-    area.sprites = [s for s in area.sprites if s.stype not in ENTITY_REMOVE]
-    # Wipe vanilla terrain
-    layer1.clear()
-
-    # Helper: add tile object to layer1
-    def tile(tileset, obj_type, x, y, w, h):
-        layer1.append(LayerObject(tileset=tileset, obj_type=obj_type,
-                                  x=ZX + x, y=ZY + y, w=w, h=h))
-
-    # Helper: add sprite (coords relative to zone origin)
-    def spr(stype, x, y, spritedata=b'\x00'*6, zone_id=0):
-        s = Sprite()
-        s.stype      = stype
-        s.x          = (ZX + x) * 16
-        s.y          = (ZY + y) * 16
-        s.spritedata = spritedata
-        s.zone_id    = zone_id
-        s.extra_byte = 0
-        area.sprites.append(s)
-
-    # Corridor floor: GY = ZH - 4 (4 rows up from zone bottom)
-    # Zone is 24 tiles tall; floor at row 20 gives 4-tile pit below and
-    # 19 tiles of headroom above — enough for Thwomps and elevated platforms.
-    GY = ZH - 4   # = 20
-
-    # Floor: two 262-tile halves (max safe object width = ~540)
-    HALF = ZW // 2  # 262
-    tile(1, 0, 0,    GY,     HALF, 1)
-    tile(1, 1, 0,    GY + 1, HALF, 3)
-    tile(1, 0, HALF, GY,     ZW - HALF, 1)
-    tile(1, 1, HALF, GY + 1, ZW - HALF, 3)
-
-    # Entrance (vanilla entrance 0 preserved; update coordinates)
-    for ent in area.entrances:
-        if ent.entrance_id == 0:
-            ent.x = (ZX + 3) * 16
-            ent.y = (ZY + GY - 2) * 16
-            break
-    # Add midway respawn entrance (entrance 1)
-    area.entrances.append(Entrance(x=(ZX + 162) * 16, y=(ZY + GY - 1) * 16,
-                                   entrance_id=1, dest_area=0, dest_entrance=0,
-                                   etype=0, zone_id=0))
-
-    # Each world callback covers ~48 tiles → 8×48 = 384 + gap = stair_x 395
-    # Goal at stair_x+90 = 485 tiles → (ZX+485)*16 = 8016px = vanilla length
-
-    # ── W1 (x=6–54): Goomba tsunami ──
-    for ex in range(6, 54, 4):
-        spr(db.GOOMBA, ex, GY - 1)
-    for ex in range(10, 54, 10):
-        spr(db.DRY_BONES, ex, GY - 1)
-
-    # ── W2 (x=56–104): Banzai Bills + elevated platforms ──
-    for bx in range(58, 104, 10):
-        spr(db.BANZAI_BILL_LAUNCHER, bx, GY - 1)
-    for bx in range(62, 104, 12):
-        spr(db.CROWBER, bx, GY - 8)
-    for px in range(60, 104, 12):
-        tile(1, 0, px, GY - 6, 4, 1)
-        tile(1, 1, px, GY - 5, 4, 2)
-
-    # ── W3 (x=108–158): Big Thwomp gauntlet on thin ledges ──
-    for px in range(110, 158, 8):
-        tile(1, 0, px, GY - 4, 3, 1)
-        tile(1, 1, px, GY - 3, 3, 1)
-    for tx in range(112, 158, 10):
-        spr(db.BIG_THWOMP, tx, 1)
-    spr(db.STAR_COIN, 134, GY - 7, bytes([0, 0, 0, 0, 0, 0]))
-
-    spr(db.MIDWAY_FLAG, 162, GY - 1, b'\x00\x00\x00\x01\x00\x00')
-
-    # ── W4 (x=164–212): Dungeon — Dry Bones + Hammer Bros ──
-    for px in range(166, 212, 8):
-        tile(1, 0, px, GY - 5, 4, 1)
-        tile(1, 1, px, GY - 4, 4, 2)
-    for fx in range(168, 212, 10):
-        spr(db.DRY_BONES, fx, GY - 4)
-    for hx in range(172, 212, 14):
-        spr(db.HAMMER_BRO, hx, GY - 6)
-
-    # ── W5 (x=216–264): Forest — Chain Chomps on ledges ──
-    for px in range(218, 264, 10):
-        tile(1, 0, px, GY - 7, 5, 1)
-        tile(1, 1, px, GY - 6, 5, 2)
-    for cx in range(220, 264, 10):
-        spr(db.CHAIN_CHOMP, cx, GY - 8)
-
-    # ── W6 (x=268–316): Sledge Bros + Podoboos ──
-    for sx in range(270, 316, 8):
-        spr(db.SLEDGE_BRO, sx, GY - 1)
-    for pbx in range(272, 316, 10):
-        spr(db.PODOBOO, pbx, GY + 2, b'\x00\x00\x00\x00\x00\x02')
-
-    # ── W7 (x=320–368): Sky platforms + Banzai second wave ──
-    for px in range(322, 368, 12):
-        tile(1, 0, px, GY - 8, 4, 1)
-        tile(1, 1, px, GY - 7, 4, 2)
-    for bx in range(324, 368, 10):
-        spr(db.BANZAI_BILL_LAUNCHER, bx, GY - 1)
-    for cx in range(326, 368, 12):
-        spr(db.CROWBER, cx, GY - 12)
-    spr(db.STAR_COIN, 344, GY - 12, bytes([0, 0, 0, 0, 1, 0]))
-
-    # ── W8 (x=372–393): All Bros + Crowbers + Thwomps — dense final sprint ──
-    for bx in range(374, 393, 6):
-        spr(db.CROWBER, bx, GY - 10)
-    for bx in range(375, 393, 8):
-        spr(db.HAMMER_BRO, bx, GY - 1)
-    for bx in range(377, 393, 10):
-        spr(db.SLEDGE_BRO, bx, GY - 1)
-    for bx in range(379, 393, 12):
-        spr(db.BIG_THWOMP, bx, 1)
-    for bx in range(381, 393, 10):
-        spr(db.PODOBOO, bx, GY + 2, b'\x00\x00\x00\x00\x00\x02')
-
-    # ── ASCENDING FINALE: zigzag staircase — stair_x=395 puts goal at tile 485 ──
-    # (ZX+485)*16 = (16+485)*16 = 8016px = vanilla 09-08 goal pole position
-    stair_x = 395
-    NUM_STAIRS = 16
-    for i in range(NUM_STAIRS):
-        px = stair_x + i * 5
-        py = GY - 2 - i
-        if py < 2:
-            py = 2
-        tile(1, 0, px, py,     4, 1)
-        tile(1, 1, px, py + 1, 4, 3)
-        if i % 4 == 0:
-            spr(db.PODOBOO, px + 2, py + 3, b'\x00\x00\x00\x00\x00\x02')
-        if i % 6 == 0:
-            spr(db.CROWBER, px + 1, py - 2)
-
-    summit_x = stair_x + NUM_STAIRS * 5 + 2
-    summit_y = 2
-    tile(1, 0, summit_x,      summit_y,     14, 1)
-    tile(1, 1, summit_x,      summit_y + 1, 14, 4)
-    spr(db.STAR_COIN, summit_x + 5, summit_y - 2, bytes([0, 0, 0, 0, 2, 0]))
-    spr(db.GOAL_POLE, summit_x + 10, summit_y + 1)
-
-    # loaded_sprites must cover all sprite types present (vanilla controllers + ours)
-    area.loaded_sprites = sorted(set(s.stype for s in area.sprites))
-
-    # Write back
-    arc.set_file('course/course1.bin', serialize_course_bin(area))
-    arc.set_file('course/course1_bgdatL1.bin', serialize_layer_data(layer1))
-
-    with open('output/ChaosStation/Stage/09-08.arc', 'wb') as f:
-        f.write(arc.pack())
-    print('Created 9-8: Chaos Absolute (vanilla base, all worlds, ascending finale)')
-
-
-def create_chaos_credits():
-    """Write custom staffroll.bin credits for Chaos Station.
-
-    Uses the official NSMBW Staffroll Tool (staffroll.py) to compile the
-    text format into a valid binary, avoiding manual binary encoding issues.
-    """
-    import subprocess, tempfile, shutil
-
-    text = """\
-:<yellow>PRODUCED BY</yellow>
-:Stecca
-
-
-
-:<yellow>CHAOS STATION</yellow>
-:The First AI-Built NSMBW Modpack
-
-
-
-:<yellow>HUMAN VISION</yellow>
-:Stecca
-
-
-
-:<yellow>AI DIRECTOR</yellow>
-:Claude Sonnet 4.6
-
-
-
-:<yellow>AI SYSTEM</yellow>
-:Anthropic Claude
-
-
-
-:<yellow>WORLD DESIGN</yellow>
-:Claude AI
-
-
-
-:<yellow>LEVEL DESIGN</yellow>
-:All 50+ Levels Generated by AI
-:Zero Human Code
-
-
-
-:<yellow>W1 GRASS</yellow>
-:Propeller Plains
-:Underground Rumble
-:Sky High Chaos
-:Sunken Abyss
-:Skyline Sprint
-:Phantom Passage
-
-
-
-:<yellow>W2 DESERT</yellow>
-:Sandstorm Blitz
-:Pyramid Descent
-:Oasis Heights
-:Desert Gales
-:Sunbaked Ruins
-:Bramball Dunes
-:Sandstorm Spire
-:Roy's Three-Way Maze
-
-
-
-:<yellow>W3 ICE</yellow>
-:Penguin Parkway
-:Frostbite Chasm
-:Sub-Zero Swim
-:Switchblock Spire
-:Frostwheel Gallery
-:Frozen Mansion of Woe
-:Glacial Spire
-:Lemmy's Icy Arena
-
-
-
-:<yellow>W4 OCEAN</yellow>
-:Tropical Coast
-:Jellyfish Depths
-:Barrel Roll Rapids
-:Mangrove Maze
-:Piranha Tides
-:Coral Catapult
-:Coral Keep
-
-
-
-:<yellow>W5 JUNGLE</yellow>
-:Venomwood Causeway
-:Frostspill Ravine
-:Rootlight Catacombs
-:Stormvine Skywalk
-:Sunken Thorn Citadel
-:Drowned Gallery
-:Briarclock Tower
-:Briar Bastion
-
-
-
-:<yellow>W6 MOUNTAIN</yellow>
-:Cliffside Stampede
-:Bullet Bill Boulevard
-:Frozen Depths
-:Magma Crags
-:Vertigo Climb
-:Fortress of Winds
-:Summit Blitz
-
-
-
-:<yellow>W7 SKY</yellow>
-:Cloud Rush
-:Gale Force Gauntlet
-:Armada Approach
-:Skykeep Fortress
-:Stormcellar Depths
-:Skyfall Gauntlet
-
-
-
-:<yellow>W8 LAVA</yellow>
-:Scorched Entry
-:Poison Depths
-:Meteor Storm
-:Midnight Trench
-:Magma Rise
-:Bowser's Vanguard
-:Inferno Shaft
-:Kamek's Spire
-:The Doomship
-:Bowser's Fortress
-
-
-
-:<yellow>W9 CHAOS</yellow>
-:Pixel Perfect
-:Enemy Flood
-:Upside Down
-:Ghost Maze
-:Snowfire
-:King Bill Alley
-:Rotor Hell
-:Chaos Absolute
-
-
-
-:<yellow>TOOLS USED</yellow>
-:Reggie Level Editor
-:Python 3
-:U8Archive Library
-:NSMBW Modding Wiki
-
-
-
-:<yellow>SPECIAL THANKS</yellow>
-:Nintendo EAD
-:NSMBW Community
-:Reggie Developers
-:All Playtesters
-:You The Player
-
-
-
-:<yellow>GENERAL PRODUCER</yellow>
-:Shigeru Miyamoto
-
-
-
-:<yellow>EXECUTIVE PRODUCER</yellow>
-:<coin>Satoru Iwata</coin>
-
-
-
-:<Copyrights>
-"""
-
-    out_dir = 'output/ChaosStation/US/EngUS/staffroll'
-    os.makedirs(out_dir, exist_ok=True)
-
-    tool = 'NSMBW-Staffroll-Tool-master/staffroll.py'
-
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt',
-                                     delete=False, encoding='utf-8') as tmp:
-        tmp.write(text)
-        tmp_path = tmp.name
-
-    try:
-        out_bin = f'{out_dir}/staffroll.bin'
-        subprocess.run(
-            ['python3', tool, '--type', 'txt', tmp_path, out_bin],
-            check=True
-        )
-        print(f'Saved custom credits: {out_bin} ({os.path.getsize(out_bin)} bytes)')
-    finally:
-        os.unlink(tmp_path)
 
 
 if __name__ == '__main__':
@@ -14131,6 +8876,12 @@ if __name__ == '__main__':
     print("[6/14] Creating Level 1-6: Phantom Passage (ghost house)")
     create_level_1_6()
 
+    print("[W1] Modifying Castle 1 (01-24): Larry's Lair")
+    create_level_castle()
+
+    print("[W1] Modifying Cannon 1 (01-36)")
+    create_level_cannon()
+
     print("[7/14] Creating Level 2-1: Sandstorm Blitz")
     create_level_2_1()
 
@@ -14156,8 +8907,10 @@ if __name__ == '__main__':
     print("[12/20] Creating Level 2-6: Bramball Dunes")
     create_level_2_6()
 
-    print("[13/20] Modifying Ambush (02-33/34/35): Desert Elite Patrol")
+    print("[W2] Modifying Cannon 2 (02-36): Desert Dash")
+    create_level_2_cannon()
 
+    print("[13/20] Modifying Ambush (02-33/34/35): Desert Elite Patrol")
     create_ambush_2()
 
     print("[W3] Creating Level 3-1: Penguin Parkway")
@@ -14191,7 +8944,8 @@ if __name__ == '__main__':
     create_level_3_cannon()
 
     print("[14/19] Modifying Tower 1 (01-22)")
-    
+    create_level_tower()
+
     print("\n[15/18] Creating World 4 levels")
     create_level_4_1()
     create_level_4_2()
@@ -14200,8 +8954,7 @@ if __name__ == '__main__':
     create_level_4_5()
     
     print("Creating 4-GH: Haunted Reef")
-    import create_4_gh
-    create_4_gh.build_haunted_reef()
+    create_level_4_ghost_house()
     
     # Vanilla modifiers for World 4
     create_level_4_tower()
@@ -14252,7 +9005,7 @@ if __name__ == '__main__':
     create_level_6_2()
     print("[W6] Creating Level 6-3: Frozen Depths")
     create_level_6_3()
-    print("[W6] Creating Level 6-4: Magma Crags")
+    print("[W6] Creating Level 6-4: Frozen Maw")
     create_level_6_4()
     print("[W6] Creating Level 6-5: Vertigo Climb")
     create_level_6_5()
@@ -14271,72 +9024,6 @@ if __name__ == '__main__':
     print("[W6] Modifying Airship (06-38)")
     create_level_6_airship()
 
-    print("\n[W7] Creating Level 7-1: Cloud Rush")
-    create_level_7_1()
-    print("[W7] Creating Level 7-2: Gale Force Gauntlet")
-    create_level_7_2()
-    print("[W7] Creating Level 7-3: Armada Approach")
-    create_level_7_3()
-    print("[W7] Creating Level 7-4: Skykeep Fortress")
-    create_level_7_4()
-    print("[W7] Creating Level 7-5: Stormcellar Depths")
-    create_level_7_5()
-    print("[W7] Creating Level 7-6: Skyfall Gauntlet")
-    create_level_7_6()
-    print("[W7] Creating Ghost House (07-21)")
-    create_level_7_ghost_house()
-    print("[W7] Modifying Tower (07-22)")
-    create_level_7_tower()
-    print("[W7] Modifying Castle (07-24)")
-    create_level_7_castle()
-    print("[W7] Modifying Mushroom Houses")
-    create_level_7_mushroom_houses()
-    print("[W7] Modifying Ambushes")
-    create_level_7_ambush()
-    print("[W7] Modifying Airship (07-38)")
-    create_level_7_airship()
-
-    print("\n[W8] Creating Level 8-1: Scorched Entry")
-    create_level_8_1()
-    print("[W8] Creating Level 8-2: Poison Depths (secret exit)")
-    create_level_8_2()
-    print("[W8] Creating Level 8-3: Meteor Storm")
-    create_level_8_3()
-    print("[W8] Creating Level 8-4: Midnight Trench (underwater)")
-    create_level_8_4()
-    print("[W8] Creating Level 8-5: Magma Rise")
-    create_level_8_5()
-    print("[W8] Creating Level 8-6: Bowser's Vanguard")
-    create_level_8_6()
-    print("[W8] Creating Level 8-7: Doomfield")
-    create_level_8_7()
-    print("[W8] Modifying Tower (08-22): Kamek's Spire")
-    create_level_8_tower()
-    print("[W8] Modifying Airship (08-38): The Doomship")
-    create_level_8_airship()
-    print("[W8] Modifying Ambushes (08-33/34/35)")
-    create_level_8_ambush()
-    print("[W8] Modifying Castle (08-24): Bowser's Fortress")
-    create_level_8_castle()
-
-    print("\n[W9] Creating World 9: Chaos Absolute (Veteran Challenges)")
-    print("[W9] Creating Level 9-1: Pixel Perfect")
-    create_level_9_1()
-    print("[W9] Creating Level 9-2: Enemy Flood")
-    create_level_9_2()
-    print("[W9] Creating Level 9-3: Upside Down")
-    create_level_9_3()
-    print("[W9] Creating Level 9-4: Ghost Maze")
-    create_level_9_4()
-    print("[W9] Creating Level 9-5: Snowfire")
-    create_level_9_5()
-    print("[W9] Creating Level 9-6: King Bill Alley")
-    create_level_9_6()
-    print("[W9] Creating Level 9-7: Minimal Matter")
-    create_level_9_7()
-    print("[W9] Creating Level 9-8: Chaos Absolute")
-    create_level_9_8()
-
     print("\n[16/18] Copying & Modifying Mushroom Houses (W1-W3)")
     create_mushroom_houses()
 
@@ -14348,8 +9035,5 @@ if __name__ == '__main__':
 
     print("[19/19] Building texture modifications (title logo, character colors, coins, icons)")
     build_all_textures()
-
-    print("[20/20] Writing custom credits (staffroll.bin)")
-    create_chaos_credits()
 
     print("\n=== Done! ===")
