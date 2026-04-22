@@ -5159,6 +5159,7 @@ def create_level_3_5():
 
     # ═══════════ AREA 2 ═══════════
     area2 = parse_course_bin(arc.get_file('course/course2.bin'))
+    Z2 = area2.zones[0].zone_id
     new2 = []
     for s in area2.sprites:
         if s.stype == 20:   # Goomba
@@ -5173,9 +5174,9 @@ def create_level_3_5():
             new2.append(ns)
         else:
             new2.append(s)
-            
-    # Add a spooky Boos constraint in Area 2
-    new2.append(Sprite(stype=BOO, x=600, y=300, spritedata=b'\x00'*6, zone_id=0, extra_byte=0))
+
+    # Add a spooky Boo in Area 2
+    new2.append(Sprite(stype=BOO, x=600, y=300, spritedata=b'\x00'*6, zone_id=Z2, extra_byte=0))
 
     area2.sprites = new2
     area2.loaded_sprites = sorted(set(s.stype for s in new2))
@@ -6491,6 +6492,7 @@ def create_level_4_ghost_house():
         area1.layer1.append(LayerObject(tileset=2, obj_type=ot, x=x, y=y, w=w, h=h))
 
     GY = 28
+    WATER_Y = 18
     a1_spr(db.WATER_FILL, 0, 18, b'\x00\x00\x00\x00\x00\x00')
     a1_obj(db.GrassObjs.GROUND_TOP, 0, GY, 210, 1)
     a1_obj(db.GrassObjs.GROUND_FILL, 0, GY+1, 210, 4)
@@ -6516,8 +6518,8 @@ def create_level_4_ghost_house():
     a1_spr(276, END_X, 14)
     area1.entrances.append(Entrance(x=END_X*16, y=16*16, entrance_id=1, dest_area=2, dest_entrance=0, etype=db.ENTRANCE_DOOR, zone_id=0, layer=0, path=0, unk1=0, unk2=0, settings=0, leave_level=0, cp_direction=0))
 
-    s1(db.STAR_COIN, 132*16, (WATER_Y-4)*16, b'\x00\x00\x00\x00\x00\x00', 0)
-    s1(db.MIDWAY_FLAG, 140*16, (WATER_Y-1)*16, b'\x00\x00\x00\x01\x00\x00', 0)
+    a1_spr(db.STAR_COIN, 132, WATER_Y-4, b'\x00\x00\x00\x00\x00\x00')
+    a1_spr(db.MIDWAY_FLAG, 140, WATER_Y-1, b'\x00\x00\x00\x01\x00\x00')
     area1.loaded_sprites = sorted(set(s.stype for s in area1.sprites))
     arc.set_file('course/course1.bin', serialize_course_bin(area1))
     arc.set_file('course/course1_bgdatL0.bin', serialize_layer_data(area1.layer0))
@@ -8402,7 +8404,6 @@ def create_level_6_1():
     a.add_entrance(1, 142 * 16, (GY - 1) * 16, etype=db.ENTRANCE_NORMAL, zone_id=0)  # Midway respawn
     a.add_sprite(10, 3 * 16, (GY - 2) * 16)
     a.add_sprite(db.BUZZY_BEETLE, 10 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 12 * 16, (GY - 1) * 16)
 
     a.add_ground(18, GY, 10, 5, tileset=1)
     a.add_sprite(db.CHAIN_CHOMP, 22 * 16, (GY - 1) * 16)
@@ -8430,8 +8431,6 @@ def create_level_6_1():
 
     a.add_ground(84, GY - 3, 8, 5, tileset=1)
     a.add_sprite(db.BUZZY_BEETLE, 86 * 16, (GY - 4) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 89 * 16, (GY - 4) * 16)
-    a.add_sprite(db.PARAGOOMBA, 88 * 16, (GY - 8) * 16)
 
     # =======================================================================
     # VINE CROSSING 1 (REQUIRED) — X 96-124
@@ -8541,13 +8540,11 @@ def create_level_6_1():
     a.add_ground(270, GY, 10, 5, tileset=1)
     a.add_sprite(db.CHAIN_CHOMP, 274 * 16, (GY - 1) * 16)
     a.add_sprite(db.SLEDGE_BRO, 277 * 16, (GY - 1) * 16)
-    a.add_sprite(db.PARAGOOMBA, 272 * 16, (GY - 6) * 16)
     a.add_question_block(276, GY - 4, contents=0)
 
     a.add_ground(284, GY - 4, 6, 5, tileset=1)
     a.add_sprite(db.THWOMP, 287 * 16, (GY - 11) * 16)
     a.add_sprite(db.BUZZY_BEETLE, 285 * 16, (GY - 5) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 288 * 16, (GY - 5) * 16)
 
     a.add_ground(294, GY, 8, 5, tileset=1)
     a.add_sprite(db.SLEDGE_BRO, 297 * 16, (GY - 1) * 16)
@@ -8556,13 +8553,11 @@ def create_level_6_1():
 
     a.add_ground(306, GY - 3, 6, 5, tileset=1)
     a.add_sprite(db.THWOMP, 309 * 16, (GY - 10) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 310 * 16, (GY - 4) * 16)
     a.add_sprite(db.PARAGOOMBA, 307 * 16, (GY - 8) * 16)
 
     a.add_ground(316, GY, 10, 5, tileset=1)
     a.add_sprite(db.CHAIN_CHOMP, 319 * 16, (GY - 1) * 16)
     a.add_sprite(db.CHAIN_CHOMP, 323 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BUZZY_BEETLE, 321 * 16, (GY - 1) * 16)
 
     a.add_ground(330, GY - 4, 6, 5, tileset=1)
     a.add_sprite(db.SLEDGE_BRO, 333 * 16, (GY - 5) * 16)
@@ -8570,9 +8565,7 @@ def create_level_6_1():
     a.add_sprite(db.KOOPA_PARATROOPA, 331 * 16, (GY - 9) * 16)
 
     a.add_ground(340, GY, 10, 5, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 343 * 16, (GY - 1) * 16)
     a.add_sprite(db.CHAIN_CHOMP, 347 * 16, (GY - 1) * 16)
-    a.add_sprite(db.PARAGOOMBA, 345 * 16, (GY - 6) * 16)
 
     # =======================================================================
     # VINE CROSSING 3 (REQUIRED) — X 354-390
@@ -8615,7 +8608,6 @@ def create_level_6_1():
     a.add_ground(390, GY, 12, 5, tileset=1)
     a.add_sprite(db.CHAIN_CHOMP, 393 * 16, (GY - 1) * 16)
     a.add_sprite(db.CHAIN_CHOMP, 398 * 16, (GY - 1) * 16)
-    a.add_sprite(db.PARAGOOMBA, 396 * 16, (GY - 6) * 16)
 
     a.add_ground(406, GY - 3, 6, 5, tileset=1)
     a.add_sprite(db.THWOMP, 409 * 16, (GY - 10) * 16)
@@ -8716,9 +8708,10 @@ def create_level_6_2():
     a.add_ground(207, GY, 8, 6, tileset=1)
     a.add_sprite(db.HAMMER_BRO, 210 * 16, (GY - 1) * 16)
 
-    for lx, ly, lw in [(220, GY, 8), (232, GY - 5, 6), (242, GY, 7), (254, GY - 6, 6), (264, GY, 8), (276, GY - 5, 6)]:
+    for idx, (lx, ly, lw) in enumerate([(220, GY, 8), (232, GY - 5, 6), (242, GY, 7), (254, GY - 6, 6), (264, GY, 8), (276, GY - 5, 6)]):
         a.add_ground(lx, ly, lw, 6, tileset=1)
-        a.add_sprite(db.SLEDGE_BRO, (lx + lw // 2) * 16, (ly - 1) * 16)
+        enemy = db.SLEDGE_BRO if idx % 2 == 0 else db.HAMMER_BRO
+        a.add_sprite(enemy, (lx + lw // 2) * 16, (ly - 1) * 16)
         a.add_sprite(db.BANZAI_BILL_LAUNCHER, (lx + lw + 3) * 16, (ly - 1) * 16)
         a.add_sprite(db.BANZAI_BILL_LAUNCHER, (lx + lw + 3) * 16, (ly + 5) * 16)
 
@@ -8837,7 +8830,6 @@ def create_level_6_3():
 
     a.add_ground(78, GY - 3, 8, 5, tileset=1)
     a.add_sprite(db.DRY_BONES, 81 * 16, (GY - 4) * 16)
-    a.add_sprite(db.DRY_BONES, 83 * 16, (GY - 4) * 16)
 
     # SECTION B: Icicle Drop Zone (X 90-160)
     # Icicles drip from the ceiling. Navigate the timing while crossing water.
@@ -8862,7 +8854,6 @@ def create_level_6_3():
 
     a.add_ground(138, GY, 8, 5, tileset=1)
     a.add_sprite(db.DRY_BONES, 141 * 16, (GY - 1) * 16)
-    a.add_sprite(db.DRY_BONES, 143 * 16, (GY - 1) * 16)
     # Red coin ring — grab all 8 coins between icicle drops and Dry Bones
     a.add_red_coin_ring(140, GY - 5, group_id=0x22, pattern='circle')
 
@@ -8892,7 +8883,6 @@ def create_level_6_3():
     # SECTION D: Dry Bones Gauntlet (X 220-290)
     a.add_ground(204, GY, 12, 5, tileset=1)
     a.add_sprite(db.DRY_BONES, 207 * 16, (GY - 1) * 16)
-    a.add_sprite(db.DRY_BONES, 210 * 16, (GY - 1) * 16)
     a.add_sprite(db.ICE_BRO, 213 * 16, (GY - 1) * 16)
 
     for ix in [220, 228, 236]:
@@ -8920,7 +8910,6 @@ def create_level_6_3():
     a.add_ground(272, GY, 10, 5, tileset=1)
     a.add_sprite(db.PIPE_FIRE_PIRANHA_UP, 275 * 16, (GY - 1) * 16)
     a.add_sprite(db.DRY_BONES, 278 * 16, (GY - 1) * 16)
-    a.add_sprite(db.DRY_BONES, 280 * 16, (GY - 1) * 16)
     a.add_sprite(db.ICICLE, 277 * 16, 8 * 16)
 
     a.add_ground(286, GY - 4, 5, 5, tileset=1)
@@ -8948,7 +8937,6 @@ def create_level_6_3():
 
     a.add_ground(335, GY, 10, 5, tileset=1)
     a.add_sprite(db.DRY_BONES, 337 * 16, (GY - 1) * 16)
-    a.add_sprite(db.DRY_BONES, 340 * 16, (GY - 1) * 16)
     a.add_sprite(db.ICE_BRO, 342 * 16, (GY - 1) * 16)
     a.add_sprite(db.ICICLE, 338 * 16, 8 * 16)
     a.add_sprite(db.ICICLE, 341 * 16, 8 * 16)
@@ -9184,12 +9172,9 @@ def create_level_6_5():
     # Trapped under the ceiling. Packed with enemies. No escape upward.
 
     # Corridor 1 — Cheep Cheep swarm + Spiny Cheep Cheeps + Bloopers
-    a.add_sprite(db.CHEEP_CHEEP,       42 * 16, (WY + 5) * 16)
     a.add_sprite(db.SPINY_CHEEP_CHEEP, 46 * 16, (WY + 8) * 16)
     a.add_sprite(db.CHEEP_CHEEP,       50 * 16, (WY + 4) * 16)
     a.add_sprite(db.SPINY_CHEEP_CHEEP, 54 * 16, (WY + 9) * 16)
-    a.add_sprite(db.CHEEP_CHEEP,       58 * 16, (WY + 6) * 16)
-    a.add_sprite(db.BLOOPER, 48 * 16, (WY + 6) * 16)
     a.add_sprite(db.BLOOPER, 56 * 16, (WY + 4) * 16)
 
     # Urchin wall #1 — pillar narrowing the passage
@@ -9201,7 +9186,6 @@ def create_level_6_5():
     # Corridor 2 — Blooper Nanny + Spiny Cheeps closing in
     a.add_sprite(db.BLOOPER_NANNY,     70 * 16, (WY + 5) * 16)
     a.add_sprite(db.SPINY_CHEEP_CHEEP, 74 * 16, (WY + 9) * 16)
-    a.add_sprite(db.CHEEP_CHEEP,       78 * 16, (WY + 4) * 16)
     a.add_sprite(db.SPINY_CHEEP_CHEEP, 82 * 16, (WY + 7) * 16)
     a.add_sprite(db.FISHBONE, 76 * 16, (GY + 7) * 16)
     a.add_sprite(db.BLOOPER, 85 * 16, (WY + 8) * 16)
@@ -9220,14 +9204,9 @@ def create_level_6_5():
 
     # Urchin zigzag maze — alternating ceiling/floor urchins, dense
     a.add_sprite(db.URCHIN, 96 * 16, (WY + 3) * 16)
-    a.add_sprite(db.URCHIN, 100 * 16, (GY + 7) * 16)
     a.add_sprite(db.URCHIN, 104 * 16, (WY + 3) * 16)
-    a.add_sprite(db.URCHIN, 108 * 16, (GY + 7) * 16)
     a.add_sprite(db.URCHIN, 112 * 16, (WY + 3) * 16)
-    a.add_sprite(db.URCHIN, 116 * 16, (GY + 7) * 16)
-    a.add_sprite(db.SPINY_CHEEP_CHEEP, 98 * 16, (WY + 7) * 16)
     a.add_sprite(db.CHEEP_CHEEP,       106 * 16, (WY + 5) * 16)
-    a.add_sprite(db.SPINY_CHEEP_CHEEP, 114 * 16, (WY + 8) * 16)
     a.add_sprite(db.FISHBONE, 102 * 16, (WY + 9) * 16)
     a.add_sprite(db.FISHBONE, 110 * 16, (WY + 4) * 16)
 
@@ -9293,12 +9272,8 @@ def create_level_6_5():
     a.add_sprite(db.URCHIN, 242 * 16, (WY + 11) * 16)
     a.add_sprite(db.URCHIN, 250 * 16, (WY + 8) * 16)
     a.add_sprite(db.BLOOPER_NANNY, 228 * 16, (WY + 6) * 16)
-    a.add_sprite(db.BLOOPER_NANNY, 248 * 16, (WY + 9) * 16)
     a.add_sprite(db.FISHBONE, 236 * 16, (WY + 5) * 16)
-    a.add_sprite(db.FISHBONE, 244 * 16, (WY + 10) * 16)
-    a.add_sprite(db.CHEEP_CHEEP, 232 * 16, (WY + 9) * 16)
     a.add_sprite(db.CHEEP_CHEEP, 240 * 16, (WY + 4) * 16)
-    a.add_sprite(db.CHEEP_CHEEP, 252 * 16, (WY + 7) * 16)
 
     # Squeeze corridor — ceiling AND floor both tighten further
     a.add_ground(260, WY + 3, 30, 2, tileset=1)     # extra low ceiling overlay
@@ -9326,8 +9301,6 @@ def create_level_6_5():
     a.add_sprite(db.FISHBONE, 308 * 16, (GY + 7) * 16)
     a.add_sprite(db.FISHBONE, 314 * 16, (WY + 3) * 16)
     a.add_sprite(db.FISHBONE, 322 * 16, (WY + 6) * 16)
-    a.add_sprite(db.CHEEP_CHEEP, 302 * 16, (WY + 9) * 16)
-    a.add_sprite(db.CHEEP_CHEEP, 316 * 16, (WY + 5) * 16)
     a.add_sprite(db.BLOOPER, 320 * 16, (WY + 8) * 16)
 
     # Star Coin #3 — floor trench, Urchins on both sides + Fishbone
@@ -9407,7 +9380,6 @@ def create_level_6_6():
     a.add_sprite(db.HAMMER_BRO, 21 * 16, (GY - 4) * 16)
 
     a.add_ground(28, GY - 6, 6, 6, tileset=1)        # step 2
-    a.add_sprite(db.SLEDGE_BRO, 31 * 16, (GY - 7) * 16)
     a.add_sprite(db.BULLET_BILL_LAUNCHER, 38 * 16, (GY - 8) * 16)
 
     a.add_ground(38, GY - 9, 6, 6, tileset=1)        # step 3
@@ -9458,7 +9430,6 @@ def create_level_6_6():
     # Last embrasure
     a.add_ground(128, GY - 12, 4, 3, tileset=1)
     a.add_sprite(db.BANZAI_BILL_LAUNCHER, 136 * 16, (GY - 14) * 16)
-    a.add_sprite(db.BANZAI_BILL_LAUNCHER, 136 * 16, (GY - 8) * 16)
 
     # === SECTION C: Interior Descent (X 136-200) ===
     # Drop DOWN inside the fortress — enclosed rooms with ceilings above.
@@ -9505,7 +9476,6 @@ def create_level_6_6():
 
     # Tower 2 — taller
     a.add_ground(198, GY - 12, 3, 14, tileset=1)
-    a.add_sprite(db.SLEDGE_BRO, 199 * 16, (GY - 13) * 16)
     a.add_sprite(db.BULLET_BILL_LAUNCHER, 205 * 16, (GY - 14) * 16)
 
     # Tower 3 — shorter
@@ -9947,9 +9917,7 @@ def create_level_7_3():
 
     # Rocky Wrenches on the lower deck
     a.add_sprite(db.ROCKY_WRENCH, 60 * 16, (GY + 1) * 16)
-    a.add_sprite(db.ROCKY_WRENCH, 68 * 16, (GY + 1) * 16)
     a.add_sprite(db.ROCKY_WRENCH, 76 * 16, (GY + 1) * 16)
-    a.add_sprite(db.ROCKY_WRENCH, 84 * 16, (GY + 1) * 16)
     a.add_sprite(db.HAMMER_BRO, 72 * 16, (GY + 1) * 16)   # Hammer Bro on deck
 
     a.add_sprite(db.BANZAI_BILL_LAUNCHER, 95 * 16, (GY) * 16)
@@ -9976,7 +9944,6 @@ def create_level_7_3():
     a.add_sprite(db.AMP, 118 * 16, (GY - 3) * 16)   # extra Amp in gap
     a.add_ground(124, GY - 2, 4, 4, tileset=1)
     a.add_sprite(db.FIRE_BRO, 126 * 16, (GY - 3) * 16)
-    a.add_sprite(db.SLEDGE_BRO, 125 * 16, (GY - 3) * 16)
 
     # Pillar 3
     a.add_ground(132, GY - 6, 2, 8, tileset=1)
@@ -10016,9 +9983,7 @@ def create_level_7_3():
     # Deck enemies — heavy resistance on the flagship
     a.add_sprite(db.BOB_OMB, 168 * 16, (GY - 1) * 16)
     a.add_sprite(db.SLEDGE_BRO, 173 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BOB_OMB, 177 * 16, (GY - 1) * 16)
     a.add_sprite(db.FIRE_BRO, 192 * 16, (GY - 1) * 16)
-    a.add_sprite(db.BOB_OMB, 196 * 16, (GY - 1) * 16)
     a.add_sprite(db.SLEDGE_BRO, 200 * 16, (GY - 1) * 16)
 
     a.add_sprite(db.BANZAI_BILL_LAUNCHER, 208 * 16, (GY - 2) * 16)

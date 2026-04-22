@@ -26,6 +26,9 @@ FAST_PAIRS = [
     ("BGM_SIRO.32.brstm", "BGM_SIRO_fast.32.brstm"),
     ("BGM_TORIDE_BOSS.32.brstm", "BGM_TORIDE_BOSS_fast.32.brstm"),
     ("BGM_SUICHU.32.brstm", "BGM_SUICHU_fast.32.brstm"),
+    ("mori_lr.ry.32.brstm", "mori_fast_lr.ry.32.brstm"),
+    ("kazan_lr.n.32.brstm", "kazan_fast_lr.n.32.brstm"),
+    ("STRM_BGM_SANBASHI.brstm", "STRM_BGM_SANBASHI_FAST.brstm"),
 ]
 
 

@@ -48,6 +48,12 @@ ENTRIES = [
     ( 0, 'BGM_TORIDE_BOSS_fast.32.brstm',     0x0004B400),
     ( 0, 'BGM_SUICHU.32.brstm',               0x0004B794),  # Underwater (add when ready)
     ( 0, 'BGM_SUICHU_fast.32.brstm',           0x0004B7D0),
+    ( 0, 'mori_lr.ry.32.brstm',               0x0004B89C),  # Forest
+    ( 0, 'mori_fast_lr.ry.32.brstm',          0x0004B8D8),  # Forest fast
+    ( 0, 'kazan_lr.n.32.brstm',               0x0004ADF4),  # Lava
+    ( 0, 'kazan_fast_lr.n.32.brstm',          0x0004AE30),  # Lava fast
+    ( 0, 'STRM_BGM_SANBASHI.brstm',           0x0004B918),  # Sky
+    ( 0, 'STRM_BGM_SANBASHI_FAST.brstm',      0x0004B958),  # Sky fast
     (13, 'BGM_LAST_BOSS1_lr.ry.32.brstm',      0x0004B52C),
     (12, 'BGM_LAST_BOSS1_fast_lr.ry.32.brstm', 0x0004B570),
     (70, 'STRM_BGM_LAST_BOSS2.brstm',          0x0004B640),

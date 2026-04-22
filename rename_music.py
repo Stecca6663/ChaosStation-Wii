@@ -36,6 +36,12 @@ rename_map = {
     "Paper Mario_ Sticker Star - Malevolent Magikoopa, Kamek Battle.brstm": "BGM_TORIDE_BOSS.32.brstm",
     # Castle boss fight (Bowser) — same track, second copy
     "Super Mario Galaxy 2 - Megahammer_castle.brstm": "shiro_boss_lr.n.32.brstm",
+    # Forest levels
+    "Donkey Kong Country 2 (GBA) - Forest Interlude.brstm": "mori_lr.ry.32.brstm",
+    # Lava levels
+    "Donkey Kong Country Returns - Furious Fire.brstm": "kazan_lr.n.32.brstm",
+    # Sky levels
+    "Mario Kart 8 - Cloudtop Cruise.brstm": "STRM_BGM_SANBASHI.brstm",
 }
 
 for old_name, new_name in rename_map.items():
